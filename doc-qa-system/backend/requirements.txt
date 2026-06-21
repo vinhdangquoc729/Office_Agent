@@ -1,0 +1,14 @@
+langchain
+langchain-openai
+langgraph
+fastapi
+uvicorn[standard]
+python-multipart
+pdfplumber
+pandas
+openpyxl
+tabulate
+python-docx
+python-pptx
+python-dotenv
+langsmith
