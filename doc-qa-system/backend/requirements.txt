@@ -7,6 +7,8 @@ python-multipart
 pdfplumber
 pandas
 openpyxl
+matplotlib
+seaborn
 tabulate
 python-docx
 python-pptx

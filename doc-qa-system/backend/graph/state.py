@@ -12,6 +12,7 @@ class DocQAState(TypedDict):
     summary: str          # output của summarizer
     report_path: str      # đường dẫn file .docx
     slide_path: str       # đường dẫn file .pptx
+    chart_paths: list     # đường dẫn các file ảnh biểu đồ sinh ra trong turn này
     request_type: str     # analyze | summarize | report | slide | qa
     need_document: bool   # supervisor quyết định có cần load/reload tài liệu không
     error: str

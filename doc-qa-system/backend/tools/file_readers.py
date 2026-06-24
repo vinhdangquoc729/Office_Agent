@@ -185,6 +185,58 @@ def get_pdf_page_count(file_path: str) -> int:
         return len(pdf.pages)
 
 
+def read_csv(file_path: str) -> str:
+    df = pd.read_csv(file_path)
+    return df.to_markdown(index=False)
+
+
+def read_tabular_meta(file_path: str) -> dict:
+    """Trả về metadata + raw preview 6 dòng đầu (header=None) cho CSV / XLSX / XLS.
+    LLM sẽ tự xác định header row từ raw_preview."""
+    ext = Path(file_path).suffix.lower()
+    result = {"file_type": "xlsx", "sheets": []}
+
+    if ext == ".csv":
+        df = pd.read_csv(file_path)
+        result["sheets"] = [_sheet_meta("(csv)", df)]
+    else:
+        xl = pd.ExcelFile(file_path)
+        result["sheet_names"] = xl.sheet_names
+        for name in xl.sheet_names:
+            raw = xl.parse(name, header=None, nrows=6)
+            raw_preview = raw.fillna("").astype(str).values.tolist()
+            total_rows = xl.parse(name, header=None).shape[0]
+            result["sheets"].append({
+                "sheet": name,
+                "total_rows": total_rows,
+                "total_cols": len(raw.columns),
+                "raw_preview": raw_preview,
+            })
+
+    return result
+
+
+def _sheet_meta(name: str, df: pd.DataFrame, suggested_header_row: int = 0) -> dict:
+    col_info = []
+    for col in df.columns:
+        col_info.append({
+            "name": col,
+            "dtype": str(df[col].dtype),
+            "nulls": int(df[col].isna().sum()),
+            "sample": [str(v) for v in df[col].dropna().head(3).tolist()],
+        })
+    meta = {
+        "sheet": name,
+        "rows": len(df),
+        "columns": len(df.columns),
+        "column_info": col_info,
+        "preview": df.head(15).to_markdown(index=False),
+    }
+    if suggested_header_row > 0:
+        meta["suggested_header_row"] = suggested_header_row
+    return meta
+
+
 def read_excel(file_path: str) -> str:
     xl = pd.ExcelFile(file_path)
     parts = []
@@ -223,6 +275,8 @@ def read_file(file_path: str) -> tuple[str, str]:
         return read_pdf(file_path), "pdf"
     elif ext in (".xlsx", ".xls"):
         return read_excel(file_path), "xlsx"
+    elif ext == ".csv":
+        return read_csv(file_path), "xlsx"
     elif ext == ".docx":
         return read_docx(file_path), "docx"
     elif ext == ".md":

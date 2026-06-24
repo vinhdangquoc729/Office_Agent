@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import DownloadButton from './DownloadButton'
-import { OutputFile } from '../api/client'
+import { OutputFile, getDownloadUrl } from '../api/client'
 
 export interface Message {
   role: 'user' | 'assistant'
@@ -31,8 +31,34 @@ const mdComponents = {
   ),
 }
 
+function ChartPreviews({ files }: { files: OutputFile[] }) {
+  const charts = files.filter((f) => f.type === 'chart')
+  if (!charts.length) return null
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+      {charts.map((f) => (
+        <div key={f.id}>
+          <img
+            src={getDownloadUrl(f.id)}
+            alt={f.name}
+            style={{ maxWidth: '100%', borderRadius: 6, border: '1px solid #e8eaed', display: 'block' }}
+          />
+          <a
+            href={getDownloadUrl(f.id)}
+            download={f.name}
+            style={{ fontSize: 12, color: '#0969da', textDecoration: 'none', marginTop: 4, display: 'inline-block' }}
+          >
+            Tải ảnh
+          </a>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function MessageBubble({ role, content, output_files = [] }: Message) {
   const isUser = role === 'user'
+  const docFiles = output_files.filter((f) => f.type !== 'chart')
   return (
     <div style={{ ...styles.row, justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
       {!isUser && <div style={styles.avatar}>🤖</div>}
@@ -42,7 +68,8 @@ export default function MessageBubble({ role, content, output_files = [] }: Mess
         ) : (
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{content}</ReactMarkdown>
         )}
-        <DownloadButton files={output_files} />
+        <ChartPreviews files={output_files} />
+        <DownloadButton files={docFiles} />
       </div>
       {isUser && <div style={styles.avatar}>👤</div>}
     </div>

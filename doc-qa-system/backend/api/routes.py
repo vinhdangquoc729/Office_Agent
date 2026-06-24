@@ -23,7 +23,7 @@ class ChatRequest(BaseModel):
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     ext = Path(file.filename).suffix.lower()
-    allowed = {".pdf", ".xlsx", ".xls", ".docx", ".md"}
+    allowed = {".pdf", ".xlsx", ".xls", ".csv", ".docx", ".md"}
     if ext not in allowed:
         raise HTTPException(400, f"Không hỗ trợ định dạng {ext}. Chỉ hỗ trợ: {', '.join(allowed)}")
 
@@ -61,11 +61,18 @@ async def chat(req: ChatRequest):
     if result.get("report_path"):
         rp = Path(result["report_path"])
         if rp.exists():
-            output_files.append({"id": rp.name, "name": rp.name, "type": "report"})
+            rel = rp.relative_to(UPLOADS_DIR)
+            output_files.append({"id": str(rel).replace("\\", "/"), "name": rp.name, "type": "report"})
     if result.get("slide_path"):
         sp = Path(result["slide_path"])
         if sp.exists():
-            output_files.append({"id": sp.name, "name": sp.name, "type": "slide"})
+            rel = sp.relative_to(UPLOADS_DIR)
+            output_files.append({"id": str(rel).replace("\\", "/"), "name": sp.name, "type": "slide"})
+    for cp in result.get("chart_paths") or []:
+        p = Path(cp)
+        if p.exists():
+            rel = p.relative_to(UPLOADS_DIR)
+            output_files.append({"id": str(rel).replace("\\", "/"), "name": p.name, "type": "chart"})
 
     reply = result.get("summary") or result.get("analysis", {}).get("prose_summary", "Xử lý hoàn tất.")
 
@@ -98,13 +105,14 @@ async def get_history(session_id: str, file_id: str):
     return {"messages": messages}
 
 
-@router.get("/download/{filename}")
+@router.get("/download/{filename:path}")
 async def download_file(filename: str):
     file_path = UPLOADS_DIR / filename
     if not file_path.exists():
         raise HTTPException(404, "File không tồn tại.")
-    return FileResponse(
-        path=str(file_path),
-        filename=filename,
-        media_type="application/octet-stream",
-    )
+    suffix = Path(filename).suffix.lower()
+    media_types = {".png": "image/png", ".jpg": "image/jpeg", ".pdf": "application/pdf",
+                   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation"}
+    media_type = media_types.get(suffix, "application/octet-stream")
+    return FileResponse(path=str(file_path), filename=Path(filename).name, media_type=media_type)

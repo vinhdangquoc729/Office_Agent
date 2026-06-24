@@ -10,7 +10,10 @@ from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
 
 UPLOADS_DIR = Path(__file__).parent.parent / "uploads"
-UPLOADS_DIR.mkdir(exist_ok=True)
+REPORTS_DIR = UPLOADS_DIR / "reports"
+SLIDES_DIR = UPLOADS_DIR / "slides"
+for _d in [UPLOADS_DIR, REPORTS_DIR, SLIDES_DIR]:
+    _d.mkdir(exist_ok=True)
 
 # ─── Slide constants (16:9 widescreen) ───────────────────────────────────────
 _SW        = Inches(13.33)
@@ -306,7 +309,7 @@ _LAYOUTS = {
 def create_pptx(outline: list[dict], filename: str | None = None) -> str:
     if not filename:
         filename = f"slides_{uuid.uuid4().hex[:8]}.pptx"
-    output_path = UPLOADS_DIR / filename
+    output_path = SLIDES_DIR / filename
     prs = _new_presentation()
     for slide_data in outline:
         fn = _LAYOUTS.get(slide_data.get("layout", "bullets"), _LAYOUTS["bullets"])
@@ -320,7 +323,7 @@ def create_pptx(outline: list[dict], filename: str | None = None) -> str:
 def write_report_docx(content: str, filename: str | None = None) -> str:
     if not filename:
         filename = f"report_{uuid.uuid4().hex[:8]}.docx"
-    output_path = UPLOADS_DIR / filename
+    output_path = REPORTS_DIR / filename
     doc = Document()
     doc.styles["Normal"].font.size = Pt(11)
     for line in content.splitlines():

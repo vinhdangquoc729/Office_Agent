@@ -37,6 +37,16 @@ def activate_skill(slug: str) -> str:
     return skill_md.read_text(encoding="utf-8")
 
 
+def read_skill_reference(slug: str, filename: str) -> str:
+    """Đọc một file trong references/ của skill. Trả về nội dung hoặc thông báo lỗi."""
+    ref_path = SKILLS_DIR / slug / "references" / filename
+    if not ref_path.exists():
+        refs_dir = SKILLS_DIR / slug / "references"
+        available = [f.name for f in sorted(refs_dir.glob("*"))] if refs_dir.is_dir() else []
+        return f"Không tìm thấy '{filename}'. Có sẵn: {available}"
+    return ref_path.read_text(encoding="utf-8")
+
+
 def build_skill_catalog() -> str:
     lines = ["## Available Skills (Discovery)\n"]
     for s in list_skills():

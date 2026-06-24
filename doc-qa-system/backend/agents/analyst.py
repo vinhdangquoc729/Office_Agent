@@ -1,5 +1,6 @@
 import json
 import re
+import time
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
@@ -9,7 +10,7 @@ from agents import load_prompt, build_system_prompt
 from graph.state import DocQAState
 from tools.file_readers import read_pdf_pages, read_pdf_pages_detailed, get_pdf_page_count
 from tools.analysis import run_python_subprocess
-from tools.skill_loader import build_skill_catalog, activate_skill
+from tools.skill_loader import build_skill_catalog, activate_skill, read_skill_reference
 from agents.helpers import pdf_helper
 
 MAX_ITERATIONS = 15
@@ -100,14 +101,15 @@ def pdf_annotate_images(file_path: str, annotations: list[dict]) -> str:
 
 
 @tool
-def run_code(code: str) -> str:
-    """Chạy Python code (pandas, numpy) để tính toán, thống kê dữ liệu.
-    Kết quả in ra stdout sẽ được trả về. Không dùng cho I/O file."""
-    return run_python_subprocess(code)
+def read_reference(skill: str, filename: str) -> str:
+    """Đọc file tham khảo trong references/ của một skill đang active.
+    Dùng khi cần xem template chi tiết, ví dụ code, hoặc hướng dẫn bổ sung.
+    skill: tên skill (ví dụ 'excel-analysis')
+    filename: tên file (ví dụ 'chart_templates.md')"""
+    return read_skill_reference(skill, filename)
 
 
-_PDF_TOOLS = [pdf_get_page_count, pdf_rag_search, pdf_summarize_pages, pdf_read_pages, pdf_read_pages_detailed, pdf_extract_images, pdf_annotate_images, run_code]
-_GENERAL_TOOLS = [run_code]
+_PDF_STATIC_TOOLS = [pdf_get_page_count, pdf_rag_search, pdf_summarize_pages, pdf_read_pages, pdf_read_pages_detailed, pdf_extract_images, pdf_annotate_images]
 
 
 def analyst_node(state: DocQAState) -> dict:
@@ -115,6 +117,75 @@ def analyst_node(state: DocQAState) -> dict:
     file_path = state.get("file_path", "")
     file_content = state.get("file_content", "")
     user_request = state["messages"][-1].content if state.get("messages") else ""
+
+    # Trích xuất context từ file_content để inject vào subprocess
+    suggested_header_row = 0
+    sheet_names: list = []
+    sheets_columns: dict = {}
+    try:
+        fc = json.loads(file_content) if file_content else {}
+        if isinstance(fc, dict):
+            suggested_header_row = fc.get("suggested_header_row") or 0
+            sc = fc.get("sheets_columns") or {}
+            if isinstance(sc, dict):
+                sheet_names = list(sc.keys())
+                sheets_columns = sc
+    except Exception:
+        pass
+
+    # run_code là closure: inject file_path + metadata vào đầu mỗi script
+    @tool
+    def run_code(code: str) -> str:
+        """Chạy Python code (pandas, numpy) để tính toán, thống kê dữ liệu.
+        QUAN TRỌNG:
+        1. Mỗi lần gọi là một subprocess độc lập — biến từ lần gọi trước KHÔNG tồn tại.
+        2. Phải dùng print() để xuất kết quả — expression cuối KHÔNG tự động hiển thị.
+        Các biến sau được inject sẵn, dùng trực tiếp không cần khai báo:
+          - file_path         : đường dẫn file tuyệt đối
+          - output_dir        : thư mục để lưu file output (ảnh, biểu đồ...)
+          - suggested_header_row : index dòng header (dùng khi gọi pd.read_excel)
+          - sheet_names       : list tên sheet
+          - sheets_columns    : dict {sheet_name: [tên cột]} — tên cột thật, kiểm tra trước khi dùng
+        Ví dụ đúng:
+          import pandas as pd
+          df = pd.read_excel(file_path, sheet_name=sheet_names[0], header=suggested_header_row)
+          print(df.columns.tolist())
+          result = df[df['Điểm quá trình'] >= 9][['MSSV', 'First name', 'Điểm quá trình']]
+          print(result.to_string())"""
+        from pathlib import Path as _Path
+        fp_posix = file_path.replace("\\", "/")
+        uploads_dir = "/".join(fp_posix.split("/")[:-1])
+        output_dir_str = f"{uploads_dir}/charts"
+        output_path = _Path(output_dir_str)
+        output_path.mkdir(exist_ok=True)
+
+        before_pngs = set(output_path.glob("*.png")) if output_path.is_dir() else set()
+
+        preamble = (
+            f"file_path = '{fp_posix}'\n"
+            f"output_dir = '{output_dir_str}'\n"
+            f"suggested_header_row = {suggested_header_row}\n"
+            f"sheet_names = {repr(sheet_names)}\n"
+            f"sheets_columns = {repr(sheets_columns)}\n"
+        )
+        result = run_python_subprocess(preamble + "\n" + code)
+
+        # Auto-detect chart: nếu LLM không print chart_saved:, vẫn tự inject
+        after_pngs = set(output_path.glob("*.png")) if output_path.is_dir() else set()
+        ts = int(time.time())
+        for png in sorted(after_pngs - before_pngs):
+            # Bỏ qua file đã được _stamp_charts xử lý (đã có trong result)
+            already_reported = any(str(png) in line for line in result.splitlines())
+            if already_reported:
+                continue
+            # Rename thêm timestamp để tránh browser cache
+            if not re.search(r"_\d{9,}\.", png.name):
+                stamped = png.with_name(f"{png.stem}_{ts}{png.suffix}")
+                png.rename(stamped)
+                png = stamped
+            result = result.rstrip("\n") + f"\nchart_saved:{png}"
+
+        return result
 
     # Activation: chọn skill cần dùng
     selector_resp = _llm.invoke([
@@ -131,7 +202,7 @@ def analyst_node(state: DocQAState) -> dict:
     skill_contents = [activate_skill(slug) for slug in selected if slug]
     system = build_system_prompt(_BASE_PROMPT, *skill_contents)
 
-    tools = _PDF_TOOLS if file_type == "pdf" else _GENERAL_TOOLS
+    tools = [*_PDF_STATIC_TOOLS, read_reference, run_code] if file_type == "pdf" else [read_reference, run_code]
     llm_with_tools = _llm.bind_tools(tools)
 
     slide_reminder = ""
@@ -165,6 +236,14 @@ def analyst_node(state: DocQAState) -> dict:
             result = fn.invoke(tc["args"]) if fn else f"Tool '{tc['name']}' không tồn tại."
             messages.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
 
+    # Thu thập chart_saved: từ tất cả tool outputs
+    chart_paths = []
+    for msg in messages:
+        if isinstance(msg, ToolMessage):
+            for line in msg.content.splitlines():
+                if line.startswith("chart_saved:"):
+                    chart_paths.append(line[len("chart_saved:"):].strip())
+
     final = messages[-1].content or ""
     cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", final.strip())
     cleaned = re.sub(r"\n?```$", "", cleaned).strip()
@@ -173,4 +252,4 @@ def analyst_node(state: DocQAState) -> dict:
     except Exception:
         analysis = {"prose_summary": final}
 
-    return {"analysis": analysis}
+    return {"analysis": analysis, "chart_paths": chart_paths}

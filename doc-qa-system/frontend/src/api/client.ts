@@ -5,7 +5,7 @@ const api = axios.create({ baseURL: '/' })
 export interface OutputFile {
   id: string
   name: string
-  type: 'report' | 'slide'
+  type: 'report' | 'slide' | 'chart'
 }
 
 export interface ChatResponse {
