@@ -1,12 +1,17 @@
 import { useState } from 'react'
 import Sidebar from './components/Sidebar'
 import ChatWindow from './components/ChatWindow'
-import FileUpload from './components/FileUpload'
+import FileUpload, { UploadedFile } from './components/FileUpload'
+
+export interface ConvFile {
+  id: string
+  name: string
+}
 
 export interface Conversation {
   id: string
-  fileId: string
-  filename: string
+  fileIds: string[]
+  files: ConvFile[]
   title: string
   updatedAt: string
 }
@@ -15,7 +20,12 @@ const STORAGE_KEY = 'doc_qa_conversations'
 
 function loadConversations(): Conversation[] {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+    const raw: any[] = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+    return raw.map((c) => ({
+      ...c,
+      fileIds: c.fileIds ?? (c.fileId ? [c.fileId] : []),
+      files: c.files ?? (c.fileId ? [{ id: c.fileId, name: c.filename ?? '' }] : []),
+    }))
   } catch {
     return []
   }
@@ -23,6 +33,12 @@ function loadConversations(): Conversation[] {
 
 function saveConversations(convs: Conversation[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(convs))
+}
+
+function buildTitle(files: ConvFile[]): string {
+  if (!files.length) return 'Hội thoại mới'
+  if (files.length === 1) return files[0].name
+  return `${files[0].name} +${files.length - 1}`
 }
 
 export default function App() {
@@ -39,12 +55,13 @@ export default function App() {
     else localStorage.removeItem('doc_qa_active_conv')
   }
 
-  const handleUploaded = (fileId: string, filename: string) => {
+  const handleUploaded = (uploaded: UploadedFile[]) => {
+    const files: ConvFile[] = uploaded.map((u) => ({ id: u.fileId, name: u.filename }))
     const newConv: Conversation = {
       id: Math.random().toString(36).slice(2),
-      fileId,
-      filename,
-      title: filename,
+      fileIds: files.map((f) => f.id),
+      files,
+      title: buildTitle(files),
       updatedAt: new Date().toISOString(),
     }
     const updated = [newConv, ...conversations]
@@ -75,14 +92,14 @@ export default function App() {
           <ChatWindow
             key={activeConv.id}
             conversationId={activeConv.id}
-            fileId={activeConv.fileId}
-            filename={activeConv.filename}
+            fileIds={activeConv.fileIds}
+            files={activeConv.files}
             onFirstMessage={(title) => handleFirstMessage(activeConv.id, title)}
           />
         ) : (
           <div style={styles.welcome}>
             <h2 style={styles.welcomeTitle}>Doc-QA Assistant</h2>
-            <p style={styles.welcomeHint}>Upload file để bắt đầu hội thoại mới</p>
+            <p style={styles.welcomeHint}>Upload file để bắt đầu hội thoại mới (hỗ trợ nhiều file)</p>
             <div style={{ width: '100%', maxWidth: 480 }}>
               <FileUpload onUploaded={handleUploaded} />
             </div>

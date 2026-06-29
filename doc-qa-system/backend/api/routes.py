@@ -15,7 +15,8 @@ UPLOADS_DIR.mkdir(exist_ok=True)
 
 
 class ChatRequest(BaseModel):
-    file_id: str
+    file_ids: list[str]
+    file_names: list[str] = []
     message: str
     session_id: str = "default"
 
@@ -36,18 +37,23 @@ async def upload_file(file: UploadFile = File(...)):
 
 @router.post("/chat")
 async def chat(req: ChatRequest):
-    matches = list(UPLOADS_DIR.glob(f"{req.file_id}.*"))
-    if not matches:
-        raise HTTPException(404, "Không tìm thấy file. Vui lòng upload lại.")
+    file_paths = []
+    for fid in req.file_ids:
+        matches = list(UPLOADS_DIR.glob(f"{fid}.*"))
+        if not matches:
+            raise HTTPException(404, f"Không tìm thấy file '{fid}'. Vui lòng upload lại.")
+        file_paths.append(str(matches[0]))
 
-    file_path = str(matches[0])
-    thread_id = f"{req.session_id}_{req.file_id}"
+    thread_id = req.session_id
     config = {"configurable": {"thread_id": thread_id}}
 
-    # Chỉ truyền message mới + file_path; file_content/file_type được persist từ checkpointer
+    file_names = req.file_names or [Path(p).name for p in file_paths]
+
     input_state = {
         "messages": [HumanMessage(content=req.message)],
-        "file_path": file_path,
+        "file_path": file_paths[0],
+        "file_paths": file_paths,
+        "file_names": file_names,
         "summary": "",
         "analysis": {},
         "report_path": "",
@@ -76,7 +82,6 @@ async def chat(req: ChatRequest):
 
     reply = result.get("summary") or result.get("analysis", {}).get("prose_summary", "Xử lý hoàn tất.")
 
-    # Lưu AI reply vào message history để các turn sau có context
     await graph_app.aupdate_state(config, {"messages": [AIMessage(content=reply)]})
 
     return {
@@ -86,10 +91,9 @@ async def chat(req: ChatRequest):
     }
 
 
-@router.get("/history/{session_id}/{file_id}")
-async def get_history(session_id: str, file_id: str):
-    thread_id = f"{session_id}_{file_id}"
-    config = {"configurable": {"thread_id": thread_id}}
+@router.get("/history/{session_id}")
+async def get_history(session_id: str):
+    config = {"configurable": {"thread_id": session_id}}
 
     state = await graph_app.aget_state(config)
     if not state or not state.values:

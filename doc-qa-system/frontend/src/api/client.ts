@@ -22,11 +22,12 @@ export async function uploadFile(file: File): Promise<{ file_id: string; filenam
 }
 
 export async function sendMessage(
-  fileId: string,
+  fileIds: string[],
+  fileNames: string[],
   message: string,
   sessionId: string
 ): Promise<ChatResponse> {
-  const { data } = await api.post('/chat', { file_id: fileId, message, session_id: sessionId })
+  const { data } = await api.post('/chat', { file_ids: fileIds, file_names: fileNames, message, session_id: sessionId })
   return data
 }
 
@@ -35,8 +36,8 @@ export interface HistoryMessage {
   content: string
 }
 
-export async function getHistory(sessionId: string, fileId: string): Promise<HistoryMessage[]> {
-  const { data } = await api.get(`/history/${sessionId}/${fileId}`)
+export async function getHistory(sessionId: string): Promise<HistoryMessage[]> {
+  const { data } = await api.get(`/history/${sessionId}`)
   return data.messages ?? []
 }
 

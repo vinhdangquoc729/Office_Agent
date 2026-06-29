@@ -5,8 +5,10 @@ from langgraph.graph.message import add_messages
 
 class DocQAState(TypedDict):
     messages: Annotated[list, add_messages]
-    file_path: str
-    file_type: str        # pdf | xlsx | docx | md
+    file_path: str        # = file_paths[0], giữ cho backward compat
+    file_paths: list      # tất cả paths trong conversation
+    file_names: list      # tên gốc tương ứng với file_paths
+    file_type: str        # type của file_paths[0]
     file_content: str     # raw extracted content từ tool
     analysis: dict        # output của analyst
     summary: str          # output của summarizer

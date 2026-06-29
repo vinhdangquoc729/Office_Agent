@@ -2,7 +2,7 @@ import json
 
 from langchain_openai import ChatOpenAI
 
-from agents import load_prompt, build_system_prompt
+from agents import load_prompt, build_system_prompt, parse_json_response
 from tools.file_readers import read_pdf_pages
 
 _SYSTEM = build_system_prompt(load_prompt("pdf_helper"))
@@ -42,7 +42,7 @@ def run(file_path: str, page_start: int, page_end: int) -> list[dict]:
     ])
 
     try:
-        summaries = json.loads(response.content)
+        summaries = parse_json_response(response.content)
         if not isinstance(summaries, list):
             raise ValueError
     except Exception:

@@ -16,8 +16,10 @@ def _format_sources(sources: list) -> str:
     for s in sources:
         page = s.get("page")
         note = s.get("note", "")
+        file = s.get("file", "")
         if page:
-            parts.append(f"Trang {page}" + (f" — {note}" if note else ""))
+            label = f"{file} trang {page}" if file else f"Trang {page}"
+            parts.append(label + (f" — {note}" if note else ""))
     if not parts:
         return ""
     return "\n\n---\n*Nguồn: " + " · ".join(parts) + "*"

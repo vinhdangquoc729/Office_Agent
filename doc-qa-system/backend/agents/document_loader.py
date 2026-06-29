@@ -16,14 +16,8 @@ _SYSTEM = build_system_prompt(
 _llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
 
-def document_loader_node(state: DocQAState) -> dict:
-    if state.get("file_content"):
-        return {}
-
-    file_path = state.get("file_path", "")
-    if not file_path:
-        return {"error": "Không có file được cung cấp.", "file_content": ""}
-
+def _load_one(file_path: str) -> dict:
+    """Load 1 file, trả về dict {file_type, content, suggested_header_row, sheets_columns}."""
     ext = Path(file_path).suffix.lower()
 
     try:
@@ -39,13 +33,15 @@ def document_loader_node(state: DocQAState) -> dict:
             raw_content, file_type = read_file(file_path)
             user_content = f"Loại file: {file_type}\n\nNội dung:\n{raw_content[:8000]}"
     except Exception as e:
-        return {"error": str(e), "file_content": ""}
+        return {"error": str(e)}
 
     response = _llm.invoke([
         {"role": "system", "content": _SYSTEM},
         {"role": "user", "content": user_content},
     ])
 
+    suggested_header_row = 0
+    sheets_columns: dict = {}
     try:
         raw = response.content.strip()
         raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
@@ -53,27 +49,71 @@ def document_loader_node(state: DocQAState) -> dict:
         result = json.loads(raw)
         cleaned = result.get("cleaned_content", response.content)
         suggested_header_row = result.get("suggested_header_row") or 0
-        # Với xlsx/csv: re-read với header đúng từ LLM → inject tên cột thật
         if ext in (".xlsx", ".xls", ".csv"):
             import pandas as pd
-            sheets_columns = {}
             xl = pd.ExcelFile(file_path)
             for name in xl.sheet_names:
                 df = xl.parse(name, header=suggested_header_row)
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = [" > ".join(str(c) for c in col).strip() for col in df.columns]
                 sheets_columns[name] = [str(c) for c in df.columns]
-            out = {
-                "content": cleaned,
-                "suggested_header_row": suggested_header_row,
-                "sheets_columns": sheets_columns,
-            }
-            cleaned = json.dumps(out, ensure_ascii=False)
     except Exception:
         cleaned = response.content
 
     return {
-        "file_content": cleaned,
         "file_type": file_type,
-        "error": "",
+        "content": cleaned,
+        "suggested_header_row": suggested_header_row,
+        "sheets_columns": sheets_columns,
     }
+
+
+def document_loader_node(state: DocQAState) -> dict:
+    if state.get("file_content"):
+        return {}
+
+    file_paths: list = state.get("file_paths") or (
+        [state["file_path"]] if state.get("file_path") else []
+    )
+    if not file_paths:
+        return {"error": "Không có file được cung cấp.", "file_content": ""}
+
+    # Single file: giữ format cũ để backward compat
+    if len(file_paths) == 1:
+        result = _load_one(file_paths[0])
+        if "error" in result:
+            return {"error": result["error"], "file_content": ""}
+        file_type = result["file_type"]
+        ext = Path(file_paths[0]).suffix.lower()
+        if ext in (".xlsx", ".xls", ".csv"):
+            out = {
+                "content": result["content"],
+                "suggested_header_row": result["suggested_header_row"],
+                "sheets_columns": result["sheets_columns"],
+            }
+            file_content = json.dumps(out, ensure_ascii=False)
+        else:
+            file_content = result["content"]
+        return {"file_content": file_content, "file_type": file_type, "error": ""}
+
+    # Multi-file: format mới
+    file_names = state.get("file_names") or []
+    files_data = []
+    primary_type = None
+    for i, fp in enumerate(file_paths):
+        result = _load_one(fp)
+        if "error" in result:
+            return {"error": f"Lỗi khi đọc file {Path(fp).name}: {result['error']}", "file_content": ""}
+        if primary_type is None:
+            primary_type = result["file_type"]
+        files_data.append({
+            "index": i,
+            "name": file_names[i] if i < len(file_names) else Path(fp).name,
+            "type": result["file_type"],
+            "content": result["content"],
+            "suggested_header_row": result["suggested_header_row"],
+            "sheets_columns": result["sheets_columns"],
+        })
+
+    file_content = json.dumps({"files": files_data}, ensure_ascii=False)
+    return {"file_content": file_content, "file_type": primary_type, "error": ""}

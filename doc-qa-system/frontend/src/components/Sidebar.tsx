@@ -32,7 +32,7 @@ export default function Sidebar({ conversations, activeConvId, onSelect, onNewCh
             onClick={() => onSelect(c.id)}
           >
             <div style={styles.itemTitle}>{c.title}</div>
-            <div style={styles.itemSub}>{c.filename}</div>
+            <div style={styles.itemSub}>{c.files?.map((f: { name: string }) => f.name).join(', ') ?? ''}</div>
           </button>
         ))}
       </div>

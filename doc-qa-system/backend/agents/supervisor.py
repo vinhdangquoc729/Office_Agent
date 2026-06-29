@@ -2,7 +2,7 @@ import json
 
 from langchain_openai import ChatOpenAI
 
-from agents import load_prompt, build_system_prompt
+from agents import load_prompt, build_system_prompt, parse_json_response
 from graph.state import DocQAState
 
 _SYSTEM = build_system_prompt(load_prompt("supervisor"))
@@ -21,7 +21,7 @@ def supervisor_node(state: DocQAState) -> dict:
         )},
     ])
     try:
-        result = json.loads(response.content)
+        result = parse_json_response(response.content)
         return {
             "request_type": result.get("request_type", "analyze"),
             "need_document": result.get("need_document", not has_document),

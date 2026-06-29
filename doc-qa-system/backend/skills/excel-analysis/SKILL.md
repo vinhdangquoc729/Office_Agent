@@ -10,15 +10,24 @@ description: Hướng dẫn phân tích file Excel nhiều sheet, xử lý heade
 
 ## Đọc file với header đúng
 Các biến sau được inject tự động vào mỗi lần gọi run_code:
-- file_path: đường dẫn tuyệt đối đến file
-- suggested_header_row: index dòng header (đã xác định từ preview)
-- sheet_names: list tên sheet
-- sheets_columns: dict {sheet_name: [tên cột thật]}
+- file_path: đường dẫn file đầu tiên (= file_paths[0])
+- file_paths: list đường dẫn tất cả file trong conversation
+- files_metadata: list dict {suggested_header_row, sheets_columns} theo cùng index với file_paths
+- suggested_header_row: header row của file_paths[0]
+- sheet_names: list tên sheet của file_paths[0]
+- sheets_columns: dict {sheet_name: [tên cột]} của file_paths[0]
 
-Pattern chuẩn khi viết code:
+Pattern chuẩn — 1 file:
   import pandas as pd
   df = pd.read_excel(file_path, sheet_name=sheet_names[0], header=suggested_header_row)
   print(df.columns.tolist())          # luôn in tên cột trước khi truy cập
+
+Pattern — nhiều file (truy cập file thứ 2 trở đi):
+  import pandas as pd
+  # Đọc file_paths[1] với metadata đúng của nó
+  meta1 = files_metadata[1]
+  df1 = pd.read_excel(file_paths[1], header=meta1['suggested_header_row'])
+  print(df1.columns.tolist())
 
 Lưu ý cột số nguyên: nếu sheets_columns chứa 1, 6, 9 (số nguyên), truy cập bằng int:
   df[1]  # Đúng

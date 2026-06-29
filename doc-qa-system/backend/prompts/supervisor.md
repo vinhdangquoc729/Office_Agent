@@ -18,9 +18,10 @@ Phân tích yêu cầu của người dùng và quyết định:
 
 **Quan trọng**: phân loại theo **ý định hành động**, không phải keyword.
 
-- `report`: người dùng muốn **tạo ra** một tài liệu báo cáo mới
+- `report`: người dùng muốn **tạo ra** một tài liệu báo cáo mới (file .docx để tải về)
   - Đúng: "tạo báo cáo", "viết báo cáo", "xuất báo cáo", "generate report"
   - Sai: "báo cáo này nói về gì", "báo cáo có những phần nào" — đây là `qa`
+  - Sai: "bảng so sánh", "tạo bảng", "so sánh X và Y", "table" — đây là `analyze`
 
 - `slide`: người dùng muốn **tạo ra** slide mới
   - Đúng: "tạo slide", "làm presentation", "xuất slide"

@@ -1,22 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
 import { sendMessage } from '../api/client'
 import MessageBubble, { Message } from './MessageBubble'
+import { ConvFile } from '../App'
 
 interface Props {
   conversationId: string
-  fileId: string
-  filename: string
+  fileIds: string[]
+  files: ConvFile[]
   onFirstMessage: (title: string) => void
 }
 
 const msgKey = (id: string) => `doc_qa_msgs_${id}`
 
-function loadMessages(conversationId: string, filename: string): Message[] {
+function buildWelcome(files: ConvFile[]): string {
+  if (!files.length) return 'Bạn muốn hỏi gì?'
+  const names = files.map((f) => `**${f.name}**`).join(', ')
+  return `Đã tải ${names}. Bạn muốn hỏi gì về tài liệu này?`
+}
+
+function loadMessages(conversationId: string, files: ConvFile[]): Message[] {
   try {
     const saved = localStorage.getItem(msgKey(conversationId))
     if (saved) return JSON.parse(saved)
   } catch { /* ignore */ }
-  return [{ role: 'assistant', content: `Đã tải **${filename}**. Bạn muốn hỏi gì về tài liệu này?` }]
+  return [{ role: 'assistant', content: buildWelcome(files) }]
 }
 
 function saveMessages(conversationId: string, messages: Message[]) {
@@ -25,16 +32,15 @@ function saveMessages(conversationId: string, messages: Message[]) {
   } catch { /* ignore */ }
 }
 
-export default function ChatWindow({ conversationId, fileId, filename, onFirstMessage }: Props) {
-  const [messages, setMessages] = useState<Message[]>(() => loadMessages(conversationId, filename))
+export default function ChatWindow({ conversationId, fileIds, files, onFirstMessage }: Props) {
+  const [messages, setMessages] = useState<Message[]>(() => loadMessages(conversationId, files))
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const firstMessageSent = useRef(messages.some((m) => m.role === 'user'))
 
-  // Khi đổi conversation: load messages của conversation đó từ localStorage
   useEffect(() => {
-    const msgs = loadMessages(conversationId, filename)
+    const msgs = loadMessages(conversationId, files)
     setMessages(msgs)
     firstMessageSent.current = msgs.some((m) => m.role === 'user')
   }, [conversationId])
@@ -59,7 +65,7 @@ export default function ChatWindow({ conversationId, fileId, filename, onFirstMe
     }
 
     try {
-      const res = await sendMessage(fileId, text, conversationId)
+      const res = await sendMessage(fileIds, files.map((f) => f.name), text, conversationId)
       const reply: Message = {
         role: 'assistant',
         content: res.reply || 'Xử lý hoàn tất.',
@@ -77,17 +83,33 @@ export default function ChatWindow({ conversationId, fileId, filename, onFirstMe
     }
   }
 
-  const ext = filename.slice(filename.lastIndexOf('.'))
-  const downloadUrl = `/download/${fileId}${ext}`
+  const headerLabel = files.length === 1
+    ? files[0].name
+    : `${files[0]?.name ?? ''} +${files.length - 1} file`
+
+  const downloadLinks = files.map((f) => {
+    const ext = f.name.slice(f.name.lastIndexOf('.'))
+    return { name: f.name, url: `/download/${f.id}${ext}` }
+  })
 
   return (
     <div style={styles.container}>
       <div style={styles.chatHeader}>
         <span style={styles.fileIcon}>📎</span>
-        <span style={styles.fileName}>{filename}</span>
-        <a href={downloadUrl} download={filename} style={styles.downloadBtn} title="Tải xuống tài liệu gốc">
-          Tải xuống
-        </a>
+        <span style={styles.fileName} title={files.map((f) => f.name).join(', ')}>{headerLabel}</span>
+        <div style={styles.downloadGroup}>
+          {downloadLinks.map((d) => (
+            <a
+              key={d.url}
+              href={d.url}
+              download={d.name}
+              style={styles.downloadBtn}
+              title={`Tải xuống ${d.name}`}
+            >
+              {files.length > 1 ? d.name : 'Tải xuống'}
+            </a>
+          ))}
+        </div>
       </div>
 
       <div style={styles.messages}>
@@ -136,14 +158,20 @@ const styles: Record<string, React.CSSProperties> = {
   },
   fileIcon: { fontSize: 16 },
   fileName: { fontSize: 13, fontWeight: 600, color: '#1f2328', flex: 1 },
+  downloadGroup: { display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 },
   downloadBtn: {
     fontSize: 12,
     color: '#0969da',
     textDecoration: 'none',
     padding: '3px 10px',
-    border: '1px solid #d0d7de',
+    border: '1px solid #0969da',
     borderRadius: 6,
+    fontWeight: 500,
     whiteSpace: 'nowrap' as const,
+    maxWidth: 140,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    display: 'inline-block',
   },
   messages: {
     flex: 1,
