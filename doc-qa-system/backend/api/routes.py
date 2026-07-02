@@ -4,12 +4,34 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.messages import HumanMessage, AIMessage
-from pydantic import BaseModel
+from langchain_openai import ChatOpenAI
 
+from agents import load_prompt
 from graph.graph import graph_app
+
+_guard_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+_GUARD_SYSTEM = load_prompt("input_guard")
+
+_BLOCKED_MSG = {
+    "vi": "Tin nhắn bị chặn: có dấu hiệu tấn công prompt injection.",
+    "en": "Message blocked: potential prompt injection detected.",
+}
+
+
+async def _check_injection(message: str) -> tuple[bool, str]:
+    """Returns (is_safe, reason). Fails open on parse error to avoid blocking legitimate users."""
+    resp = await _guard_llm.ainvoke([
+        {"role": "system", "content": _GUARD_SYSTEM},
+        {"role": "user", "content": message},
+    ])
+    try:
+        result = json.loads(resp.content.strip())
+        return bool(result.get("safe", True)), result.get("reason", "")
+    except Exception:
+        return True, ""
 
 router = APIRouter()
 
@@ -61,10 +83,6 @@ TOOL_LABELS = {
 }
 
 
-def _sse(data: dict) -> str:
-    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
 class _ActivityHandler(AsyncCallbackHandler):
     def __init__(self, queue: asyncio.Queue, lang: str = "vi"):
         self._q = queue
@@ -102,13 +120,6 @@ class _ActivityHandler(AsyncCallbackHandler):
             await self._q.put({"type": "token", "text": token})
 
 
-class ChatRequest(BaseModel):
-    file_ids: list[str]
-    file_names: list[str] = []
-    message: str
-    session_id: str = "default"
-
-
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     ext = Path(file.filename).suffix.lower()
@@ -121,101 +132,6 @@ async def upload_file(file: UploadFile = File(...)):
     dest.write_bytes(await file.read())
 
     return {"file_id": file_id, "filename": file.filename, "saved_as": dest.name}
-
-
-@router.post("/chat")
-async def chat(req: ChatRequest):
-    file_paths = []
-    for fid in req.file_ids:
-        matches = list(UPLOADS_DIR.glob(f"{fid}.*"))
-        if not matches:
-            raise HTTPException(404, f"Không tìm thấy file '{fid}'. Vui lòng upload lại.")
-        file_paths.append(str(matches[0]))
-
-    thread_id = req.session_id
-    config = {"configurable": {"thread_id": thread_id}}
-
-    file_names = req.file_names or [Path(p).name for p in file_paths]
-
-    input_state = {
-        "messages": [HumanMessage(content=req.message)],
-        "file_path": file_paths[0],
-        "file_paths": file_paths,
-        "file_names": file_names,
-        "summary": "",
-        "analysis": {},
-        "report_path": "",
-        "slide_path": "",
-        "error": "",
-    }
-
-    async def event_stream():
-        # 4KB initial comment forces OS to send TCP segment immediately,
-        # allowing browser to resolve fetch() and start reading the stream.
-        yield ": " + " " * 4093 + "\n\n"
-
-        queue: asyncio.Queue = asyncio.Queue()
-        final_result: dict = {}
-
-        async def run_graph():
-            try:
-                result = await graph_app.ainvoke(
-                    input_state,
-                    config={**config, "callbacks": [_ActivityHandler(queue)]},
-                )
-                final_result.update(result)
-            except Exception as e:
-                final_result["error"] = str(e)
-            finally:
-                await queue.put(None)  # sentinel
-
-        asyncio.create_task(run_graph())
-
-        import time
-        t0 = time.time()
-        while True:
-            item = await queue.get()
-            ts = f"{time.time() - t0:.3f}s"
-            if item is None:
-                print(f"[SSE {ts}] sentinel — stream done")
-                break
-            print(f"[SSE {ts}] yield {item}")
-            yield _sse(item)
-            await asyncio.sleep(0)  # flush chunk riêng, tránh React batch nhiều events
-
-        if final_result.get("error"):
-            yield _sse({"type": "error", "text": final_result["error"]})
-            return
-
-        # Xử lý output files
-        output_files = []
-        if final_result.get("report_path"):
-            rp = Path(final_result["report_path"])
-            if rp.exists():
-                rel = rp.relative_to(UPLOADS_DIR)
-                output_files.append({"id": str(rel).replace("\\", "/"), "name": rp.name, "type": "report"})
-        if final_result.get("slide_path"):
-            sp = Path(final_result["slide_path"])
-            if sp.exists():
-                rel = sp.relative_to(UPLOADS_DIR)
-                output_files.append({"id": str(rel).replace("\\", "/"), "name": sp.name, "type": "slide"})
-        for cp in final_result.get("chart_paths") or []:
-            p = Path(cp)
-            if p.exists():
-                rel = p.relative_to(UPLOADS_DIR)
-                output_files.append({"id": str(rel).replace("\\", "/"), "name": p.name, "type": "chart"})
-
-        reply = final_result.get("summary") or final_result.get("analysis", {}).get("prose_summary", "")
-        if reply:
-            await graph_app.aupdate_state(config, {"messages": [AIMessage(content=reply)]})
-
-        yield _sse({"type": "done", "output_files": output_files, "content": reply})
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
 
 
 @router.websocket("/chat/ws")
@@ -233,6 +149,12 @@ async def chat_websocket(websocket: WebSocket):
     message: str = req_data.get("message", "")
     session_id: str = req_data.get("session_id", "default")
     lang: str = req_data.get("lang", "vi") if req_data.get("lang") in ("vi", "en") else "vi"
+
+    is_safe, _ = await _check_injection(message)
+    if not is_safe:
+        await websocket.send_json({"type": "error", "text": _BLOCKED_MSG[lang]})
+        await websocket.close()
+        return
 
     file_paths = []
     _file_err = "File '{}' not found" if lang == "en" else "Không tìm thấy file '{}'"
