@@ -83,14 +83,14 @@ export default function FileUpload({ onUploaded }: Props) {
 const styles: Record<string, React.CSSProperties> = {
   wrapper: { padding: '8px 12px' },
   dropzone: {
-    border: '1px dashed #2e2e2e',
+    border: '1px dashed var(--border)',
     borderRadius: 10,
     padding: '14px 16px',
     cursor: 'pointer',
     textAlign: 'center',
     fontSize: 13,
-    color: '#666',
-    background: '#141414',
+    color: 'var(--text-1)',
+    background: 'var(--bg-elevated)',
     transition: 'border-color 0.2s, background 0.2s',
   },
   fileList: {
@@ -100,8 +100,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'flex-start',
     textAlign: 'left',
   },
-  uploaded: { color: '#3fb950', fontWeight: 500, fontSize: 13 },
-  addHint: { color: '#5c9af7', fontSize: 12, marginTop: 6 },
-  hint: { lineHeight: 1.7, color: '#5a5a5a' },
-  error: { color: '#f85149', fontSize: 12, marginTop: 4 },
+  uploaded: { color: 'var(--success)', fontWeight: 500, fontSize: 13 },
+  addHint: { color: 'var(--accent-text)', fontSize: 12, marginTop: 6 },
+  hint: { lineHeight: 1.7, color: 'var(--text-2)' },
+  error: { color: 'var(--error)', fontSize: 12, marginTop: 4 },
 }

@@ -16,20 +16,20 @@ const mdComponents = {
   ul: ({ children }: any) => <ul style={{ paddingLeft: 20, margin: '4px 0 8px' }}>{children}</ul>,
   ol: ({ children }: any) => <ol style={{ paddingLeft: 20, margin: '4px 0 8px' }}>{children}</ol>,
   li: ({ children }: any) => <li style={{ marginBottom: 2 }}>{children}</li>,
-  hr: () => <hr style={{ border: 'none', borderTop: '1px solid #2e2e2e', margin: '10px 0' }} />,
-  em: ({ children }: any) => <em style={{ color: '#888', fontSize: 12 }}>{children}</em>,
-  strong: ({ children }: any) => <strong style={{ fontWeight: 600, color: '#f0f0f0' }}>{children}</strong>,
-  code: ({ children }: any) => <code style={{ background: '#252525', color: '#b8c8f5', padding: '1px 6px', borderRadius: 4, fontSize: 12.5, fontFamily: 'ui-monospace, monospace' }}>{children}</code>,
+  hr: () => <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '10px 0' }} />,
+  em: ({ children }: any) => <em style={{ color: 'var(--text-1)', fontSize: 12 }}>{children}</em>,
+  strong: ({ children }: any) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
+  code: ({ children }: any) => <code style={{ background: 'var(--code-bg)', color: 'var(--code-text)', padding: '1px 6px', borderRadius: 4, fontSize: 12.5, fontFamily: 'ui-monospace, monospace' }}>{children}</code>,
   table: ({ children }: any) => (
     <div style={{ overflowX: 'auto', margin: '8px 0' }}>
       <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%' }}>{children}</table>
     </div>
   ),
   th: ({ children }: any) => (
-    <th style={{ border: '1px solid #2e2e2e', padding: '6px 10px', background: '#1e1e1e', fontWeight: 600, textAlign: 'left', color: '#d0d0d0' }}>{children}</th>
+    <th style={{ border: '1px solid var(--border)', padding: '6px 10px', background: 'var(--bg-elevated)', fontWeight: 600, textAlign: 'left', color: 'var(--text-0)' }}>{children}</th>
   ),
   td: ({ children }: any) => (
-    <td style={{ border: '1px solid #2a2a2a', padding: '6px 10px', color: '#c8c8c8' }}>{children}</td>
+    <td style={{ border: '1px solid var(--border)', padding: '6px 10px', color: 'var(--text-1)' }}>{children}</td>
   ),
 }
 
@@ -44,12 +44,12 @@ function ChartPreviews({ files }: { files: OutputFile[] }) {
           <img
             src={getDownloadUrl(f.id)}
             alt={f.name}
-            style={{ maxWidth: '100%', borderRadius: 6, border: '1px solid #2e2e2e', display: 'block' }}
+            style={{ maxWidth: '100%', borderRadius: 6, border: '1px solid var(--border)', display: 'block' }}
           />
           <a
             href={getDownloadUrl(f.id)}
             download={f.name}
-            style={{ fontSize: 12, color: '#5c9af7', textDecoration: 'none', marginTop: 4, display: 'inline-block' }}
+            style={{ fontSize: 12, color: 'var(--accent-text)', textDecoration: 'none', marginTop: 4, display: 'inline-block' }}
           >
             {t('downloadImage')}
           </a>
@@ -92,19 +92,19 @@ const styles: Record<string, React.CSSProperties> = {
     wordBreak: 'break-word',
   },
   userBubble: {
-    background: '#4f82f7',
-    color: '#fff',
+    background: 'var(--bubble-u-bg)',
+    color: 'var(--bubble-u-text)',
     borderBottomRightRadius: 3,
   },
   assistantBubble: {
-    background: '#1a1a1a',
-    color: '#e0e0e0',
+    background: 'var(--bubble-ai-bg)',
+    color: 'var(--bubble-ai-text)',
     borderBottomLeftRadius: 3,
-    border: '1px solid #272727',
+    border: '1px solid var(--bubble-ai-bd)',
   },
   activity: {
     fontSize: 12,
-    color: '#555',
+    color: 'var(--text-2)',
     fontStyle: 'italic',
     marginTop: 6,
     display: 'flex',

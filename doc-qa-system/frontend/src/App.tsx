@@ -124,7 +124,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
-    background: '#0d0d0d',
+    background: 'var(--bg-deep)',
   },
   welcome: {
     flex: 1,
@@ -138,10 +138,10 @@ const styles: Record<string, React.CSSProperties> = {
   welcomeTitle: {
     fontSize: 26,
     fontWeight: 700,
-    color: '#efefef',
+    color: 'var(--text-0)',
   },
   welcomeHint: {
     fontSize: 14,
-    color: '#666',
+    color: 'var(--text-1)',
   },
 }

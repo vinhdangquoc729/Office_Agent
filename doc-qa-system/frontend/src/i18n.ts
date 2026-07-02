@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState } from 'react'
 import type { ReactNode } from 'react'
 
 export type Lang = 'vi' | 'en'
+export type Theme = 'light' | 'dark'
 
 const TRANSLATIONS = {
   vi: {
@@ -29,6 +30,11 @@ const TRANSLATIONS = {
     downloadLink: 'Tải {label}',
     downloadImage: 'Tải ảnh',
     langToggle: 'EN',
+    settingsBtn: 'Cài đặt',
+    langLabel: 'Ngôn ngữ',
+    themeLabel: 'Giao diện',
+    themeLight: 'Sáng',
+    themeDark: 'Tối',
   },
   en: {
     newConversation: 'New conversation',
@@ -55,6 +61,11 @@ const TRANSLATIONS = {
     downloadLink: 'Download {label}',
     downloadImage: 'Download image',
     langToggle: 'VI',
+    settingsBtn: 'Settings',
+    langLabel: 'Language',
+    themeLabel: 'Theme',
+    themeLight: 'Light',
+    themeDark: 'Dark',
   },
 }
 
@@ -64,22 +75,43 @@ interface LangContext {
   lang: Lang
   setLang: (l: Lang) => void
   t: (key: TranslationKey, vars?: Record<string, string>) => string
+  theme: Theme
+  setTheme: (t: Theme) => void
 }
 
 const LanguageContext = createContext<LangContext>({
   lang: 'vi',
   setLang: () => {},
   t: (key) => TRANSLATIONS.vi[key],
+  theme: 'dark',
+  setTheme: () => {},
 })
+
+function applyThemeClass(t: Theme) {
+  if (t === 'light') document.documentElement.classList.add('theme-light')
+  else document.documentElement.classList.remove('theme-light')
+}
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(
     () => (localStorage.getItem('doc_qa_lang') as Lang) ?? 'vi'
   )
 
+  const [theme, setThemeState] = useState<Theme>(() => {
+    const saved = (localStorage.getItem('doc_qa_theme') as Theme) ?? 'dark'
+    applyThemeClass(saved)
+    return saved
+  })
+
   const setLang = (l: Lang) => {
     setLangState(l)
     localStorage.setItem('doc_qa_lang', l)
+  }
+
+  const setTheme = (t: Theme) => {
+    setThemeState(t)
+    localStorage.setItem('doc_qa_theme', t)
+    applyThemeClass(t)
   }
 
   const t = (key: TranslationKey, vars?: Record<string, string>): string => {
@@ -95,7 +127,11 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     return text
   }
 
-  return React.createElement(LanguageContext.Provider, { value: { lang, setLang, t } }, children)
+  return React.createElement(
+    LanguageContext.Provider,
+    { value: { lang, setLang, t, theme, setTheme } },
+    children
+  )
 }
 
 export const useLanguage = () => useContext(LanguageContext)
