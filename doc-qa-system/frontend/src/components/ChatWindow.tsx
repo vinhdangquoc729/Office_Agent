@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom'
 import { sendMessageStream } from '../api/client'
 import MessageBubble, { Message } from './MessageBubble'
 import { ConvFile } from '../App'
+import { useLanguage } from '../i18n'
 
 interface Props {
   conversationId: string
@@ -14,9 +15,12 @@ interface Props {
 const msgKey = (id: string) => `doc_qa_msgs_${id}`
 
 function buildWelcome(files: ConvFile[]): string {
-  if (!files.length) return 'Bạn muốn hỏi gì?'
+  const lang = localStorage.getItem('doc_qa_lang') ?? 'vi'
+  if (!files.length) return lang === 'en' ? 'What would you like to ask?' : 'Bạn muốn hỏi gì?'
   const names = files.map((f) => `**${f.name}**`).join(', ')
-  return `Đã tải ${names}. Bạn muốn hỏi gì về tài liệu này?`
+  return lang === 'en'
+    ? `Loaded ${names}. What would you like to know about this document?`
+    : `Đã tải ${names}. Bạn muốn hỏi gì về tài liệu này?`
 }
 
 function loadMessages(conversationId: string, files: ConvFile[]): Message[] {
@@ -34,6 +38,7 @@ function saveMessages(conversationId: string, messages: Message[]) {
 }
 
 export default function ChatWindow({ conversationId, fileIds, files, onFirstMessage }: Props) {
+  const { lang, t } = useLanguage()
   const [messages, setMessages] = useState<Message[]>(() => loadMessages(conversationId, files))
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -64,11 +69,11 @@ export default function ChatWindow({ conversationId, fileIds, files, onFirstMess
       onFirstMessage(text.length > 55 ? text.slice(0, 55) + '…' : text)
     }
 
-    const placeholder: Message = { role: 'assistant', content: '', activity: 'Đang kết nối...' }
+    const placeholder: Message = { role: 'assistant', content: '', activity: t('connecting') }
     setMessages([...newMessages, placeholder])
 
     try {
-      for await (const event of sendMessageStream(fileIds, files.map((f) => f.name), text, conversationId)) {
+      for await (const event of sendMessageStream(fileIds, files.map((f) => f.name), text, conversationId, lang)) {
         if (event.type === 'activity') {
           flushSync(() => {
             setMessages((prev) => {
@@ -88,7 +93,7 @@ export default function ChatWindow({ conversationId, fileIds, files, onFirstMess
               ...cur,
               activity: '',
               output_files: event.output_files ?? [],
-              content: event.content || cur.content || 'Xử lý hoàn tất.',
+              content: event.content || cur.content || t('processDone'),
             }
             const final = [...prev.slice(0, -1), finalMsg]
             saveMessages(conversationId, final)
@@ -96,7 +101,7 @@ export default function ChatWindow({ conversationId, fileIds, files, onFirstMess
           })
         } else if (event.type === 'error') {
           setMessages((prev) => {
-            const last = { ...prev[prev.length - 1], activity: '', content: `Lỗi: ${event.text}` }
+            const last = { ...prev[prev.length - 1], activity: '', content: t('errorPrefix', { text: event.text ?? '' }) }
             const final = [...prev.slice(0, -1), last]
             saveMessages(conversationId, final)
             return final
@@ -105,7 +110,7 @@ export default function ChatWindow({ conversationId, fileIds, files, onFirstMess
       }
     } catch {
       setMessages((prev) => {
-        const last = { ...prev[prev.length - 1], activity: '', content: 'Lỗi kết nối tới server.' }
+        const last = { ...prev[prev.length - 1], activity: '', content: t('connError') }
         const final = [...prev.slice(0, -1), last]
         saveMessages(conversationId, final)
         return final
@@ -136,9 +141,9 @@ export default function ChatWindow({ conversationId, fileIds, files, onFirstMess
               href={d.url}
               download={d.name}
               style={styles.downloadBtn}
-              title={`Tải xuống ${d.name}`}
+              title={t('downloadTitle', { name: d.name })}
             >
-              {files.length > 1 ? d.name : 'Tải xuống'}
+              {files.length > 1 ? d.name : t('downloadBtn')}
             </a>
           ))}
         </div>
@@ -155,11 +160,11 @@ export default function ChatWindow({ conversationId, fileIds, files, onFirstMess
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}
-          placeholder="Nhập yêu cầu... (Enter để gửi)"
+          placeholder={t('inputPlaceholder')}
           disabled={loading}
         />
         <button style={styles.btn} onClick={send} disabled={loading || !input.trim()}>
-          Gửi
+          {t('sendBtn')}
         </button>
       </div>
     </div>
@@ -177,20 +182,20 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    padding: '12px 16px',
-    borderBottom: '1px solid #e8eaed',
-    background: '#fff',
+    padding: '11px 16px',
+    borderBottom: '1px solid #222',
+    background: '#111111',
     flexShrink: 0,
   },
-  fileIcon: { fontSize: 16 },
-  fileName: { fontSize: 13, fontWeight: 600, color: '#1f2328', flex: 1 },
+  fileIcon: { fontSize: 15, opacity: 0.6 },
+  fileName: { fontSize: 13, fontWeight: 500, color: '#c8c8c8', flex: 1 },
   downloadGroup: { display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 },
   downloadBtn: {
     fontSize: 12,
-    color: '#0969da',
+    color: '#5c9af7',
     textDecoration: 'none',
     padding: '3px 10px',
-    border: '1px solid #0969da',
+    border: '1px solid #2c4a7c',
     borderRadius: 6,
     fontWeight: 500,
     whiteSpace: 'nowrap' as const,
@@ -198,38 +203,43 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     display: 'inline-block',
+    background: 'rgba(79,130,247,0.08)',
   },
   messages: {
     flex: 1,
     overflowY: 'auto',
-    padding: '16px 12px',
-    background: '#f6f8fa',
+    padding: '20px 16px',
+    background: '#0d0d0d',
   },
   inputRow: {
     display: 'flex',
     gap: 8,
     padding: '10px 12px',
-    borderTop: '1px solid #e8eaed',
-    background: '#fff',
+    borderTop: '1px solid #222',
+    background: '#111111',
     flexShrink: 0,
   },
   input: {
     flex: 1,
     padding: '9px 14px',
-    border: '1px solid #d0d7de',
+    border: '1px solid #2e2e2e',
     borderRadius: 8,
     fontSize: 14,
     outline: 'none',
-    background: '#fff',
+    background: '#1a1a1a',
+    color: '#efefef',
+    transition: 'border-color 0.15s',
   },
   btn: {
     padding: '9px 20px',
-    background: '#0969da',
+    background: '#4f82f7',
     color: '#fff',
     border: 'none',
     borderRadius: 8,
     fontSize: 14,
     fontWeight: 600,
     cursor: 'pointer',
+    transition: 'background 0.15s',
+    flexShrink: 0,
   },
 }

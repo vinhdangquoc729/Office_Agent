@@ -2,6 +2,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import DownloadButton from './DownloadButton'
 import { OutputFile, getDownloadUrl } from '../api/client'
+import { useLanguage } from '../i18n'
 
 export interface Message {
   role: 'user' | 'assistant'
@@ -15,24 +16,25 @@ const mdComponents = {
   ul: ({ children }: any) => <ul style={{ paddingLeft: 20, margin: '4px 0 8px' }}>{children}</ul>,
   ol: ({ children }: any) => <ol style={{ paddingLeft: 20, margin: '4px 0 8px' }}>{children}</ol>,
   li: ({ children }: any) => <li style={{ marginBottom: 2 }}>{children}</li>,
-  hr: () => <hr style={{ border: 'none', borderTop: '1px solid #e8eaed', margin: '10px 0' }} />,
-  em: ({ children }: any) => <em style={{ color: '#666', fontSize: 12 }}>{children}</em>,
-  strong: ({ children }: any) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
-  code: ({ children }: any) => <code style={{ background: '#f0f0f0', padding: '1px 5px', borderRadius: 4, fontSize: 13 }}>{children}</code>,
+  hr: () => <hr style={{ border: 'none', borderTop: '1px solid #2e2e2e', margin: '10px 0' }} />,
+  em: ({ children }: any) => <em style={{ color: '#888', fontSize: 12 }}>{children}</em>,
+  strong: ({ children }: any) => <strong style={{ fontWeight: 600, color: '#f0f0f0' }}>{children}</strong>,
+  code: ({ children }: any) => <code style={{ background: '#252525', color: '#b8c8f5', padding: '1px 6px', borderRadius: 4, fontSize: 12.5, fontFamily: 'ui-monospace, monospace' }}>{children}</code>,
   table: ({ children }: any) => (
     <div style={{ overflowX: 'auto', margin: '8px 0' }}>
       <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%' }}>{children}</table>
     </div>
   ),
   th: ({ children }: any) => (
-    <th style={{ border: '1px solid #d0d7de', padding: '6px 10px', background: '#f6f8fa', fontWeight: 600, textAlign: 'left' }}>{children}</th>
+    <th style={{ border: '1px solid #2e2e2e', padding: '6px 10px', background: '#1e1e1e', fontWeight: 600, textAlign: 'left', color: '#d0d0d0' }}>{children}</th>
   ),
   td: ({ children }: any) => (
-    <td style={{ border: '1px solid #d0d7de', padding: '6px 10px' }}>{children}</td>
+    <td style={{ border: '1px solid #2a2a2a', padding: '6px 10px', color: '#c8c8c8' }}>{children}</td>
   ),
 }
 
 function ChartPreviews({ files }: { files: OutputFile[] }) {
+  const { t } = useLanguage()
   const charts = files.filter((f) => f.type === 'chart')
   if (!charts.length) return null
   return (
@@ -42,14 +44,14 @@ function ChartPreviews({ files }: { files: OutputFile[] }) {
           <img
             src={getDownloadUrl(f.id)}
             alt={f.name}
-            style={{ maxWidth: '100%', borderRadius: 6, border: '1px solid #e8eaed', display: 'block' }}
+            style={{ maxWidth: '100%', borderRadius: 6, border: '1px solid #2e2e2e', display: 'block' }}
           />
           <a
             href={getDownloadUrl(f.id)}
             download={f.name}
-            style={{ fontSize: 12, color: '#0969da', textDecoration: 'none', marginTop: 4, display: 'inline-block' }}
+            style={{ fontSize: 12, color: '#5c9af7', textDecoration: 'none', marginTop: 4, display: 'inline-block' }}
           >
-            Tải ảnh
+            {t('downloadImage')}
           </a>
         </div>
       ))}
@@ -79,17 +81,34 @@ export default function MessageBubble({ role, content, output_files = [], activi
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  row: { display: 'flex', alignItems: 'flex-end', gap: 8, marginBottom: 12 },
-  avatar: { fontSize: 22, flexShrink: 0 },
+  row: { display: 'flex', alignItems: 'flex-end', gap: 8, marginBottom: 14 },
+  avatar: { fontSize: 20, flexShrink: 0, opacity: 0.7 },
   bubble: {
-    maxWidth: '70%',
+    maxWidth: '72%',
     padding: '10px 14px',
     borderRadius: 12,
     fontSize: 14,
-    lineHeight: 1.6,
+    lineHeight: 1.65,
     wordBreak: 'break-word',
   },
-  userBubble: { background: '#0969da', color: '#fff', borderBottomRightRadius: 3 },
-  assistantBubble: { background: '#fff', color: '#1f2328', borderBottomLeftRadius: 3, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' },
-  activity: { fontSize: 12, color: '#888', fontStyle: 'italic', marginTop: 4 },
+  userBubble: {
+    background: '#4f82f7',
+    color: '#fff',
+    borderBottomRightRadius: 3,
+  },
+  assistantBubble: {
+    background: '#1a1a1a',
+    color: '#e0e0e0',
+    borderBottomLeftRadius: 3,
+    border: '1px solid #272727',
+  },
+  activity: {
+    fontSize: 12,
+    color: '#555',
+    fontStyle: 'italic',
+    marginTop: 6,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
 }

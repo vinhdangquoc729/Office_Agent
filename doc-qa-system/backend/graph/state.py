@@ -17,4 +17,5 @@ class DocQAState(TypedDict):
     chart_paths: list     # đường dẫn các file ảnh biểu đồ sinh ra trong turn này
     request_type: str     # analyze | summarize | report | slide | qa
     need_document: bool   # supervisor quyết định có cần load/reload tài liệu không
+    lang: str             # ngôn ngữ phản hồi: "vi" | "en"
     error: str

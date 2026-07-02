@@ -17,24 +17,47 @@ UPLOADS_DIR = Path(__file__).parent.parent / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
 
 NODE_LABELS = {
-    "supervisor":      "Đang xác định yêu cầu...",
-    "document_loader": "Đang đọc tài liệu...",
-    "analyst":         "Đang phân tích nội dung...",
-    "response_maker":  "Đang soạn câu trả lời...",
-    "summarizer":      "Đang tóm tắt...",
-    "reporter":        "Đang tạo báo cáo...",
-    "slide_creator":   "Đang tạo slide...",
+    "vi": {
+        "supervisor":      "Đang xác định yêu cầu...",
+        "document_loader": "Đang đọc tài liệu...",
+        "analyst":         "Đang phân tích nội dung...",
+        "response_maker":  "Đang soạn câu trả lời...",
+        "summarizer":      "Đang tóm tắt...",
+        "reporter":        "Đang tạo báo cáo...",
+        "slide_creator":   "Đang tạo slide...",
+    },
+    "en": {
+        "supervisor":      "Analyzing request...",
+        "document_loader": "Reading document...",
+        "analyst":         "Analyzing content...",
+        "response_maker":  "Composing response...",
+        "summarizer":      "Summarizing...",
+        "reporter":        "Generating report...",
+        "slide_creator":   "Creating slides...",
+    },
 }
 
 TOOL_LABELS = {
-    "pdf_read_pages":          lambda a: f"Đang đọc trang {a.get('page_start')}-{a.get('page_end')}...",
-    "pdf_summarize_pages":     lambda a: f"Đang tóm tắt trang {a.get('page_start')}-{a.get('page_end')}...",
-    "pdf_ocr_page":            lambda a: f"Đang OCR trang {a.get('page_number')}...",
-    "pdf_ocr_page_detailed":   lambda a: f"Đang OCR chi tiết trang {a.get('page_number')}...",
-    "pdf_rag_search":          lambda a: "Đang tìm kiếm ngữ nghĩa...",
-    "pdf_extract_images":      lambda a: "Đang trích xuất ảnh...",
-    "pdf_read_pages_detailed": lambda a: f"Đang đọc chi tiết trang {a.get('page_start')}-{a.get('page_end')}...",
-    "run_code":                lambda a: "Đang thực thi code...",
+    "vi": {
+        "pdf_read_pages":          lambda a: f"Đang đọc trang {a.get('page_start')}-{a.get('page_end')}...",
+        "pdf_summarize_pages":     lambda a: f"Đang tóm tắt trang {a.get('page_start')}-{a.get('page_end')}...",
+        "pdf_ocr_page":            lambda a: f"Đang OCR trang {a.get('page_number')}...",
+        "pdf_ocr_page_detailed":   lambda a: f"Đang OCR chi tiết trang {a.get('page_number')}...",
+        "pdf_rag_search":          lambda a: "Đang tìm kiếm ngữ nghĩa...",
+        "pdf_extract_images":      lambda a: "Đang trích xuất ảnh...",
+        "pdf_read_pages_detailed": lambda a: f"Đang đọc chi tiết trang {a.get('page_start')}-{a.get('page_end')}...",
+        "run_code":                lambda a: "Đang thực thi code...",
+    },
+    "en": {
+        "pdf_read_pages":          lambda a: f"Reading pages {a.get('page_start')}-{a.get('page_end')}...",
+        "pdf_summarize_pages":     lambda a: f"Summarizing pages {a.get('page_start')}-{a.get('page_end')}...",
+        "pdf_ocr_page":            lambda a: f"OCR page {a.get('page_number')}...",
+        "pdf_ocr_page_detailed":   lambda a: f"Detailed OCR page {a.get('page_number')}...",
+        "pdf_rag_search":          lambda a: "Searching semantically...",
+        "pdf_extract_images":      lambda a: "Extracting images...",
+        "pdf_read_pages_detailed": lambda a: f"Reading detailed pages {a.get('page_start')}-{a.get('page_end')}...",
+        "run_code":                lambda a: "Executing code...",
+    },
 }
 
 
@@ -43,23 +66,24 @@ def _sse(data: dict) -> str:
 
 
 class _ActivityHandler(AsyncCallbackHandler):
-    """Callback handler gửi activity/token events vào queue để stream ra SSE."""
-
-    def __init__(self, queue: asyncio.Queue):
+    def __init__(self, queue: asyncio.Queue, lang: str = "vi"):
         self._q = queue
-        self._response_maker_run_id = None  # run_id của response_maker chain
-        self._streaming_llm_run_id = None   # run_id của LLM bên trong response_maker
+        self._lang = lang
+        self._response_maker_run_id = None
+        self._streaming_llm_run_id = None
 
     async def on_chain_start(self, serialized, inputs, *, run_id, metadata=None, **kwargs):
         node = (metadata or {}).get("langgraph_node")
         if node == "response_maker":
             self._response_maker_run_id = run_id
-        if node and node in NODE_LABELS:
-            await self._q.put({"type": "activity", "text": NODE_LABELS[node]})
+        node_labels = NODE_LABELS.get(self._lang, NODE_LABELS["vi"])
+        if node and node in node_labels:
+            await self._q.put({"type": "activity", "text": node_labels[node]})
 
     async def on_tool_start(self, serialized, input_str, *, inputs=None, **kwargs):
         name = (serialized or {}).get("name", "")
-        if name not in TOOL_LABELS:
+        tool_labels = TOOL_LABELS.get(self._lang, TOOL_LABELS["vi"])
+        if name not in tool_labels:
             return
         args = inputs or {}
         if not args and isinstance(input_str, str):
@@ -67,7 +91,7 @@ class _ActivityHandler(AsyncCallbackHandler):
                 args = json.loads(input_str)
             except Exception:
                 args = {}
-        await self._q.put({"type": "activity", "text": TOOL_LABELS[name](args)})
+        await self._q.put({"type": "activity", "text": tool_labels[name](args)})
 
     async def on_llm_start(self, serialized, messages, *, run_id, parent_run_id=None, **kwargs):
         if parent_run_id == self._response_maker_run_id:
@@ -208,12 +232,14 @@ async def chat_websocket(websocket: WebSocket):
     file_names_req: list = req_data.get("file_names", [])
     message: str = req_data.get("message", "")
     session_id: str = req_data.get("session_id", "default")
+    lang: str = req_data.get("lang", "vi") if req_data.get("lang") in ("vi", "en") else "vi"
 
     file_paths = []
+    _file_err = "File '{}' not found" if lang == "en" else "Không tìm thấy file '{}'"
     for fid in file_ids:
         matches = list(UPLOADS_DIR.glob(f"{fid}.*"))
         if not matches:
-            await websocket.send_json({"type": "error", "text": f"Không tìm thấy file '{fid}'"})
+            await websocket.send_json({"type": "error", "text": _file_err.format(fid)})
             await websocket.close()
             return
         file_paths.append(str(matches[0]))
@@ -230,6 +256,7 @@ async def chat_websocket(websocket: WebSocket):
         "analysis": {},
         "report_path": "",
         "slide_path": "",
+        "lang": lang,
         "error": "",
     }
 
@@ -240,7 +267,7 @@ async def chat_websocket(websocket: WebSocket):
         try:
             result = await graph_app.ainvoke(
                 input_state,
-                config={**config, "callbacks": [_ActivityHandler(queue)]},
+                config={**config, "callbacks": [_ActivityHandler(queue, lang)]},
             )
             final_result.update(result)
         except Exception as e:

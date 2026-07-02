@@ -8,6 +8,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
 
 from agents import load_prompt, build_system_prompt, parse_json_response
+from agents.i18n import lbl
 from graph.state import DocQAState
 from tools.file_readers import read_pdf_pages, read_pdf_pages_detailed, get_pdf_page_count
 from tools.analysis import run_python_subprocess
@@ -20,14 +21,6 @@ _SKILL_CATALOG = build_skill_catalog()
 _BASE_PROMPT = load_prompt("analyst")
 _llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
-_SELECT_PROMPT = """\
-Bạn là skill selector. Dựa vào file type và yêu cầu người dùng, chọn các skill phù hợp.
-
-{catalog}
-
-Trả về JSON array các slug cần kích hoạt. Chỉ trả JSON, không giải thích.
-Ví dụ: ["excel-analysis", "data-qa"]
-"""
 
 
 @tool
@@ -82,14 +75,13 @@ def _extract_file_metadata(file_content: str) -> tuple[list, list, dict, list]:
     return files_metadata, suggested_header_row_0, sheets_columns_0, sheet_names_0
 
 
-def _build_file_list_context(file_paths: list, file_content: str, file_names: list | None = None) -> str:
-    """Tạo danh sách file với index để LLM biết cách gọi tool."""
+def _build_file_list_context(file_paths: list, file_content: str, file_names: list | None = None, lang: str = "vi") -> str:
     try:
         fc = json.loads(file_content) if file_content else {}
     except Exception:
         fc = {}
 
-    lines = ["Danh sách tài liệu (dùng file_index khi gọi tool):"]
+    lines = [lbl(lang, "file_list_header")]
     if "files" in fc:
         for f in fc["files"]:
             summary = (f.get("content") or "")[:200].replace("\n", " ")
@@ -107,6 +99,7 @@ def _build_file_list_context(file_paths: list, file_content: str, file_names: li
 
 
 def analyst_node(state: DocQAState) -> dict:
+    lang = state.get("lang", "vi")
     file_type = state.get("file_type", "")
     file_content = state.get("file_content", "")
     user_request = state["messages"][-1].content if state.get("messages") else ""
@@ -147,10 +140,10 @@ def analyst_node(state: DocQAState) -> dict:
             clean = re.sub(r"[^\w]", "", text, flags=re.UNICODE)
             words = text.split()
             if (len(clean) < 100 or len(words) < 20) and page.get("images"):
-                page["_ocr_hint"] = (
-                    f"[HINT] Trang {page['page_number']}: text sơ sài ({len(clean)} ký tự, {len(words)} từ) "
-                    f"nhưng có {len(page['images'])} ảnh — NÊN gọi pdf_ocr_page(file_index={file_index}, "
-                    f"page_number={page['page_number']}) để đọc nội dung trong ảnh."
+                page["_ocr_hint"] = lbl(
+                    lang, "ocr_hint",
+                    page=page["page_number"], chars=len(clean), words=len(words),
+                    n=len(page["images"]), idx=file_index,
                 )
         return json.dumps(result, ensure_ascii=False)
 
@@ -173,7 +166,7 @@ def analyst_node(state: DocQAState) -> dict:
             index_pdf(path, pages)
         results = rag_search(path, query)
         if not results:
-            return "Không tìm thấy kết quả phù hợp."
+            return lbl(lang, "no_search_results")
         return json.dumps(results, ensure_ascii=False)
 
     @tool
@@ -184,7 +177,7 @@ def analyst_node(state: DocQAState) -> dict:
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
         manifest = extract_images(path, page_start, page_end)
         if not manifest:
-            return "Không tìm thấy ảnh nào trong khoảng trang đã chỉ định."
+            return lbl(lang, "no_images_found")
         return json.dumps(manifest, ensure_ascii=False)
 
     @tool
@@ -195,7 +188,7 @@ def analyst_node(state: DocQAState) -> dict:
         from tools.image_extractor import annotate_images
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
         updated = annotate_images(path, annotations)
-        return f"Đã cập nhật 'about' cho {updated} ảnh."
+        return lbl(lang, "updated_about", n=updated)
 
     @tool
     def pdf_ocr_page(file_index: int, page_number: int) -> str:
@@ -206,7 +199,7 @@ def analyst_node(state: DocQAState) -> dict:
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
         blocks = ocr_page(path, page_number)
         if not blocks:
-            return "Không nhận diện được text nào trên trang này."
+            return lbl(lang, "no_ocr_text")
         sorted_blocks = sorted(blocks, key=lambda b: -b["y1"])
         return "\n".join(b["text"] for b in sorted_blocks if b["text"].strip())
 
@@ -220,7 +213,7 @@ def analyst_node(state: DocQAState) -> dict:
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
         blocks = ocr_page(path, page_number)
         if not blocks:
-            return "Không nhận diện được text nào trên trang này."
+            return lbl(lang, "no_ocr_text")
         return json.dumps(blocks, ensure_ascii=False)
 
     # --- run_code closure ---
@@ -280,8 +273,8 @@ def analyst_node(state: DocQAState) -> dict:
 
     # --- Skill selection ---
     selector_resp = _llm.invoke([
-        {"role": "system", "content": _SELECT_PROMPT.format(catalog=_SKILL_CATALOG)},
-        {"role": "user",   "content": f"file_type: {file_type}\nYêu cầu: {user_request}"},
+        {"role": "system", "content": lbl(lang, "select_prompt", catalog=_SKILL_CATALOG)},
+        {"role": "user",   "content": f"file_type: {file_type}\n{lbl(lang, 'request')}: {user_request}"},
     ])
     try:
         selected = parse_json_response(selector_resp.content)
@@ -300,16 +293,10 @@ def analyst_node(state: DocQAState) -> dict:
     tools = [*_pdf_tools, read_reference, run_code] if has_pdf else [read_reference, run_code]
     llm_with_tools = _llm.bind_tools(tools)
 
-    slide_reminder = ""
-    if "slide-content" in selected:
-        slide_reminder = (
-            "\n\nNHIỆM VỤ BẮT BUỘC: Yêu cầu này là TẠO SLIDE. "
-            "Trường 'slides' trong output JSON PHẢI được điền đầy đủ — đây là output chính, không phải tuỳ chọn. "
-            "Trước khi kết thúc, kiểm tra lại: 'slides' có phải là array không rỗng không?"
-        )
+    slide_reminder = lbl(lang, "slide_mandatory") if "slide-content" in selected else ""
 
     file_names_state: list = state.get("file_names") or []
-    file_list_ctx = _build_file_list_context(file_paths_state, file_content, file_names_state)
+    file_list_ctx = _build_file_list_context(file_paths_state, file_content, file_names_state, lang)
 
     # Conversation history: last 3 Q&A pairs (excluding current message)
     all_msgs = state.get("messages", [])
@@ -317,19 +304,19 @@ def analyst_node(state: DocQAState) -> dict:
     history_ctx = ""
     if history_turns:
         lines = []
-        for m in history_turns[-6:]:  # tối đa 3 cặp Q&A
-            role = "Người dùng" if isinstance(m, HumanMessage) else "Trợ lý"
+        for m in history_turns[-6:]:
+            role = lbl(lang, "user_role") if isinstance(m, HumanMessage) else lbl(lang, "assistant_role")
             text = (m.content or "")[:600]
             lines.append(f"{role}: {text}")
-        history_ctx = "\n\nLịch sử hội thoại:\n" + "\n".join(lines) + "\n"
+        history_ctx = f"\n\n{lbl(lang, 'history_header')}\n" + "\n".join(lines) + "\n"
 
     messages = [
-        SystemMessage(content=system),
+        SystemMessage(content=system + lbl(lang, "lang_note")),
         HumanMessage(content=(
             f"{file_list_ctx}"
             f"{history_ctx}\n"
-            f"Yêu cầu hiện tại: {user_request}{slide_reminder}\n\n"
-            f"Nội dung tài liệu:\n{file_content}"
+            f"{lbl(lang, 'current_request')}: {user_request}{slide_reminder}\n\n"
+            f"{lbl(lang, 'document_content')}:\n{file_content}"
         )),
     ]
 
@@ -343,7 +330,7 @@ def analyst_node(state: DocQAState) -> dict:
 
         for tc in response.tool_calls:
             fn = tool_map.get(tc["name"])
-            result = fn.invoke(tc["args"]) if fn else f"Tool '{tc['name']}' không tồn tại."
+            result = fn.invoke(tc["args"]) if fn else lbl(lang, "tool_not_found", name=tc["name"])
             messages.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
 
     chart_paths = []

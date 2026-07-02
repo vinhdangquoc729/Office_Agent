@@ -3,13 +3,14 @@ import json
 from langchain_openai import ChatOpenAI
 
 from agents import load_prompt, build_system_prompt
+from agents.i18n import lbl
 from graph.state import DocQAState
 
 _SYSTEM = build_system_prompt(load_prompt("response_maker"))
 _llm = ChatOpenAI(model="gpt-4o", temperature=0.1, streaming=True)
 
 
-def _format_sources(sources: list) -> str:
+def _format_sources(sources: list, lang: str = "vi") -> str:
     if not sources:
         return ""
     parts = []
@@ -18,14 +19,15 @@ def _format_sources(sources: list) -> str:
         note = s.get("note", "")
         file = s.get("file", "")
         if page:
-            label = f"{file} trang {page}" if file else f"Trang {page}"
+            label = lbl(lang, "file_page_label", file=file, page=page) if file else lbl(lang, "page_label", page=page)
             parts.append(label + (f" — {note}" if note else ""))
     if not parts:
         return ""
-    return "\n\n---\n*Nguồn: " + " · ".join(parts) + "*"
+    return f"\n\n---\n*{lbl(lang, 'sources_label')}: " + " · ".join(parts) + "*"
 
 
 async def response_maker_node(state: DocQAState) -> dict:
+    lang = state.get("lang", "vi")
     analysis = state.get("analysis", {})
     user_request = state["messages"][-1].content if state.get("messages") else ""
 
@@ -40,11 +42,11 @@ async def response_maker_node(state: DocQAState) -> dict:
 
     chunks = []
     async for chunk in _llm.astream([
-        {"role": "system", "content": _SYSTEM},
+        {"role": "system", "content": _SYSTEM + lbl(lang, "lang_note")},
         {"role": "user", "content": (
-            f"Yêu cầu của người dùng: {user_request}\n\n"
+            f"{lbl(lang, 'user_request')}: {user_request}\n\n"
             f"has_data: {bool(data)}\n\n"
-            f"Thông tin phân tích:\n{context}"
+            f"{lbl(lang, 'analysis_info')}:\n{context}"
         )},
     ]):
         chunks.append(chunk.content)
@@ -56,6 +58,6 @@ async def response_maker_node(state: DocQAState) -> dict:
     elif data:
         text = f"{text}\n\n{data}"
 
-    text += _format_sources(sources)
+    text += _format_sources(sources, lang)
 
     return {"summary": text}

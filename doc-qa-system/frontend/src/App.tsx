@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Sidebar from './components/Sidebar'
 import ChatWindow from './components/ChatWindow'
 import FileUpload, { UploadedFile } from './components/FileUpload'
+import { useLanguage } from './i18n'
 
 export interface ConvFile {
   id: string
@@ -35,13 +36,14 @@ function saveConversations(convs: Conversation[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(convs))
 }
 
-function buildTitle(files: ConvFile[]): string {
-  if (!files.length) return 'Hội thoại mới'
+function buildTitle(files: ConvFile[], lang: string): string {
+  if (!files.length) return lang === 'en' ? 'New conversation' : 'Hội thoại mới'
   if (files.length === 1) return files[0].name
   return `${files[0].name} +${files.length - 1}`
 }
 
 export default function App() {
+  const { lang, t } = useLanguage()
   const [conversations, setConversations] = useState<Conversation[]>(loadConversations)
   const [activeConvId, setActiveConvId] = useState<string | null>(
     () => localStorage.getItem('doc_qa_active_conv')
@@ -61,7 +63,7 @@ export default function App() {
       id: Math.random().toString(36).slice(2),
       fileIds: files.map((f) => f.id),
       files,
-      title: buildTitle(files),
+      title: buildTitle(files, lang),
       updatedAt: new Date().toISOString(),
     }
     const updated = [newConv, ...conversations]
@@ -99,7 +101,7 @@ export default function App() {
         ) : (
           <div style={styles.welcome}>
             <h2 style={styles.welcomeTitle}>Doc-QA Assistant</h2>
-            <p style={styles.welcomeHint}>Upload file để bắt đầu hội thoại mới (hỗ trợ nhiều file)</p>
+            <p style={styles.welcomeHint}>{t('uploadHint')}</p>
             <div style={{ width: '100%', maxWidth: 480 }}>
               <FileUpload onUploaded={handleUploaded} />
             </div>
@@ -122,7 +124,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
-    background: '#fff',
+    background: '#0d0d0d',
   },
   welcome: {
     flex: 1,
@@ -136,10 +138,10 @@ const styles: Record<string, React.CSSProperties> = {
   welcomeTitle: {
     fontSize: 26,
     fontWeight: 700,
-    color: '#1f2328',
+    color: '#efefef',
   },
   welcomeHint: {
     fontSize: 14,
-    color: '#888',
+    color: '#666',
   },
 }

@@ -46,7 +46,8 @@ export async function* sendMessageStream(
   fileIds: string[],
   fileNames: string[],
   message: string,
-  sessionId: string
+  sessionId: string,
+  lang: string = 'vi'
 ): AsyncGenerator<SSEEvent> {
   const ws = new WebSocket(`${WS_BASE}/chat/ws`)
 
@@ -59,7 +60,7 @@ export async function* sendMessageStream(
   }
 
   ws.onopen = () => {
-    ws.send(JSON.stringify({ file_ids: fileIds, file_names: fileNames, message, session_id: sessionId }))
+    ws.send(JSON.stringify({ file_ids: fileIds, file_names: fileNames, message, session_id: sessionId, lang }))
   }
   ws.onmessage = (e) => {
     try { push(JSON.parse(e.data as string)) } catch { /* ignore */ }

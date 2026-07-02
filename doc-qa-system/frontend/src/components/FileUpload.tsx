@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { uploadFile } from '../api/client'
+import { useLanguage } from '../i18n'
 
 export interface UploadedFile {
   fileId: string
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export default function FileUpload({ onUploaded }: Props) {
+  const { t } = useLanguage()
   const [uploading, setUploading] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [error, setError] = useState('')
@@ -31,7 +33,7 @@ export default function FileUpload({ onUploaded }: Props) {
       setUploadedFiles(merged)
       onUploaded(merged)
     } catch {
-      setError('Upload thất bại. Vui lòng thử lại.')
+      setError(t('uploadFailed'))
     } finally {
       setUploading(false)
     }
@@ -51,16 +53,18 @@ export default function FileUpload({ onUploaded }: Props) {
         onClick={() => inputRef.current?.click()}
       >
         {uploading ? (
-          <span>Đang upload...</span>
+          <span>{t('uploading')}</span>
         ) : uploadedFiles.length > 0 ? (
           <div style={styles.fileList}>
             {uploadedFiles.map((f) => (
               <span key={f.fileId} style={styles.uploaded}>📎 {f.filename} ✓</span>
             ))}
-            <span style={styles.addHint}>+ Thêm file</span>
+            <span style={styles.addHint}>{t('addFile')}</span>
           </div>
         ) : (
-          <span style={styles.hint}>Kéo thả file vào đây hoặc click để chọn<br />(PDF, XLSX, DOCX, MD — hỗ trợ nhiều file)</span>
+          <span style={styles.hint}>{t('dropHint').split('\n').map((line, i) => (
+            i === 0 ? <>{line}<br /></> : line
+          ))}</span>
         )}
       </div>
       {error && <p style={styles.error}>{error}</p>}
@@ -79,15 +83,15 @@ export default function FileUpload({ onUploaded }: Props) {
 const styles: Record<string, React.CSSProperties> = {
   wrapper: { padding: '8px 12px' },
   dropzone: {
-    border: '2px dashed #d0d7de',
-    borderRadius: 8,
-    padding: '12px 16px',
+    border: '1px dashed #2e2e2e',
+    borderRadius: 10,
+    padding: '14px 16px',
     cursor: 'pointer',
     textAlign: 'center',
     fontSize: 13,
     color: '#666',
-    background: '#fafafa',
-    transition: 'border-color 0.2s',
+    background: '#141414',
+    transition: 'border-color 0.2s, background 0.2s',
   },
   fileList: {
     display: 'flex',
@@ -96,8 +100,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'flex-start',
     textAlign: 'left',
   },
-  uploaded: { color: '#1a7f37', fontWeight: 600 },
-  addHint: { color: '#0969da', fontSize: 12, marginTop: 4 },
-  hint: { lineHeight: 1.6 },
-  error: { color: '#cf222e', fontSize: 12, marginTop: 4 },
+  uploaded: { color: '#3fb950', fontWeight: 500, fontSize: 13 },
+  addHint: { color: '#5c9af7', fontSize: 12, marginTop: 6 },
+  hint: { lineHeight: 1.7, color: '#5a5a5a' },
+  error: { color: '#f85149', fontSize: 12, marginTop: 4 },
 }

@@ -5,6 +5,7 @@ from pathlib import Path
 from langchain_openai import ChatOpenAI
 
 from agents import load_prompt, load_skill, build_system_prompt
+from agents.i18n import lbl
 from graph.state import DocQAState
 from tools.file_readers import read_file, read_pdf_meta, read_tabular_meta
 
@@ -75,8 +76,9 @@ def document_loader_node(state: DocQAState) -> dict:
     file_paths: list = state.get("file_paths") or (
         [state["file_path"]] if state.get("file_path") else []
     )
+    lang = state.get("lang", "vi")
     if not file_paths:
-        return {"error": "Không có file được cung cấp.", "file_content": ""}
+        return {"error": lbl(lang, "no_files"), "file_content": ""}
 
     # Single file: giữ format cũ để backward compat
     if len(file_paths) == 1:
@@ -103,7 +105,7 @@ def document_loader_node(state: DocQAState) -> dict:
     for i, fp in enumerate(file_paths):
         result = _load_one(fp)
         if "error" in result:
-            return {"error": f"Lỗi khi đọc file {Path(fp).name}: {result['error']}", "file_content": ""}
+            return {"error": lbl(lang, "file_read_error", name=Path(fp).name, error=result["error"]), "file_content": ""}
         if primary_type is None:
             primary_type = result["file_type"]
         files_data.append({
