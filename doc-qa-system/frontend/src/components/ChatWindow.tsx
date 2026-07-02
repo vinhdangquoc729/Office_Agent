@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { sendMessage } from '../api/client'
+import { flushSync } from 'react-dom'
+import { sendMessageStream } from '../api/client'
 import MessageBubble, { Message } from './MessageBubble'
 import { ConvFile } from '../App'
 
@@ -55,29 +56,60 @@ export default function ChatWindow({ conversationId, fileIds, files, onFirstMess
 
     const newMessages: Message[] = [...messages, { role: 'user', content: text }]
     setInput('')
-    setMessages(newMessages)
-    saveMessages(conversationId, newMessages)
     setLoading(true)
+    saveMessages(conversationId, newMessages)
 
     if (!firstMessageSent.current) {
       firstMessageSent.current = true
       onFirstMessage(text.length > 55 ? text.slice(0, 55) + '…' : text)
     }
 
+    const placeholder: Message = { role: 'assistant', content: '', activity: 'Đang kết nối...' }
+    setMessages([...newMessages, placeholder])
+
     try {
-      const res = await sendMessage(fileIds, files.map((f) => f.name), text, conversationId)
-      const reply: Message = {
-        role: 'assistant',
-        content: res.reply || 'Xử lý hoàn tất.',
-        output_files: res.output_files,
+      for await (const event of sendMessageStream(fileIds, files.map((f) => f.name), text, conversationId)) {
+        if (event.type === 'activity') {
+          flushSync(() => {
+            setMessages((prev) => {
+              const last = { ...prev[prev.length - 1], activity: event.text }
+              return [...prev.slice(0, -1), last]
+            })
+          })
+        } else if (event.type === 'token') {
+          setMessages((prev) => {
+            const last = { ...prev[prev.length - 1], content: prev[prev.length - 1].content + (event.text ?? '') }
+            return [...prev.slice(0, -1), last]
+          })
+        } else if (event.type === 'done') {
+          setMessages((prev) => {
+            const cur = prev[prev.length - 1]
+            const finalMsg: Message = {
+              ...cur,
+              activity: '',
+              output_files: event.output_files ?? [],
+              content: event.content || cur.content || 'Xử lý hoàn tất.',
+            }
+            const final = [...prev.slice(0, -1), finalMsg]
+            saveMessages(conversationId, final)
+            return final
+          })
+        } else if (event.type === 'error') {
+          setMessages((prev) => {
+            const last = { ...prev[prev.length - 1], activity: '', content: `Lỗi: ${event.text}` }
+            const final = [...prev.slice(0, -1), last]
+            saveMessages(conversationId, final)
+            return final
+          })
+        }
       }
-      const finalMessages = [...newMessages, reply]
-      setMessages(finalMessages)
-      saveMessages(conversationId, finalMessages)
     } catch {
-      const errMsg: Message[] = [...newMessages, { role: 'assistant', content: 'Lỗi kết nối tới server.' }]
-      setMessages(errMsg)
-      saveMessages(conversationId, errMsg)
+      setMessages((prev) => {
+        const last = { ...prev[prev.length - 1], activity: '', content: 'Lỗi kết nối tới server.' }
+        const final = [...prev.slice(0, -1), last]
+        saveMessages(conversationId, final)
+        return final
+      })
     } finally {
       setLoading(false)
     }
@@ -114,12 +146,6 @@ export default function ChatWindow({ conversationId, fileIds, files, onFirstMess
 
       <div style={styles.messages}>
         {messages.map((m, i) => <MessageBubble key={i} {...m} />)}
-        {loading && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 12 }}>
-            <div style={{ fontSize: 22 }}>🤖</div>
-            <div style={styles.typing}>Đang xử lý...</div>
-          </div>
-        )}
         <div ref={bottomRef} />
       </div>
 
@@ -178,15 +204,6 @@ const styles: Record<string, React.CSSProperties> = {
     overflowY: 'auto',
     padding: '16px 12px',
     background: '#f6f8fa',
-  },
-  typing: {
-    background: '#fff',
-    padding: '10px 14px',
-    borderRadius: 12,
-    borderBottomLeftRadius: 3,
-    fontSize: 14,
-    color: '#666',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
   },
   inputRow: {
     display: 'flex',

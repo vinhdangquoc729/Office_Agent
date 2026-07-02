@@ -6,7 +6,7 @@ from agents import load_prompt, build_system_prompt
 from graph.state import DocQAState
 
 _SYSTEM = build_system_prompt(load_prompt("response_maker"))
-_llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
+_llm = ChatOpenAI(model="gpt-4o", temperature=0.1, streaming=True)
 
 
 def _format_sources(sources: list) -> str:
@@ -25,7 +25,7 @@ def _format_sources(sources: list) -> str:
     return "\n\n---\n*Nguồn: " + " · ".join(parts) + "*"
 
 
-def response_maker_node(state: DocQAState) -> dict:
+async def response_maker_node(state: DocQAState) -> dict:
     analysis = state.get("analysis", {})
     user_request = state["messages"][-1].content if state.get("messages") else ""
 
@@ -38,16 +38,18 @@ def response_maker_node(state: DocQAState) -> dict:
         indent=2,
     )
 
-    response = _llm.invoke([
+    chunks = []
+    async for chunk in _llm.astream([
         {"role": "system", "content": _SYSTEM},
         {"role": "user", "content": (
             f"Yêu cầu của người dùng: {user_request}\n\n"
             f"has_data: {bool(data)}\n\n"
             f"Thông tin phân tích:\n{context}"
         )},
-    ])
+    ]):
+        chunks.append(chunk.content)
 
-    text = response.content.strip()
+    text = "".join(chunks).strip()
 
     if data and "{{data}}" in text:
         text = text.replace("{{data}}", data)

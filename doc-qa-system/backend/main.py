@@ -1,3 +1,11 @@
+import asyncio
+import sys
+
+# Windows ProactorEventLoop buffers socket writes until connection closes,
+# breaking SSE streaming. SelectorEventLoop flushes writes immediately.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from dotenv import load_dotenv
 load_dotenv()
 

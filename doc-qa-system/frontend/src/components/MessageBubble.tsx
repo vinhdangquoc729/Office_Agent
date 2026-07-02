@@ -7,6 +7,7 @@ export interface Message {
   role: 'user' | 'assistant'
   content: string
   output_files?: OutputFile[]
+  activity?: string
 }
 
 const mdComponents = {
@@ -56,7 +57,7 @@ function ChartPreviews({ files }: { files: OutputFile[] }) {
   )
 }
 
-export default function MessageBubble({ role, content, output_files = [] }: Message) {
+export default function MessageBubble({ role, content, output_files = [], activity }: Message) {
   const isUser = role === 'user'
   const docFiles = output_files.filter((f) => f.type !== 'chart')
   return (
@@ -65,9 +66,10 @@ export default function MessageBubble({ role, content, output_files = [] }: Mess
       <div style={{ ...styles.bubble, ...(isUser ? styles.userBubble : styles.assistantBubble) }}>
         {isUser ? (
           <span>{content}</span>
-        ) : (
+        ) : content ? (
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{content}</ReactMarkdown>
-        )}
+        ) : null}
+        {!isUser && activity && <div style={styles.activity}>{activity}</div>}
         <ChartPreviews files={output_files} />
         <DownloadButton files={docFiles} />
       </div>
@@ -89,4 +91,5 @@ const styles: Record<string, React.CSSProperties> = {
   },
   userBubble: { background: '#0969da', color: '#fff', borderBottomRightRadius: 3 },
   assistantBubble: { background: '#fff', color: '#1f2328', borderBottomLeftRadius: 3, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' },
+  activity: { fontSize: 12, color: '#888', fontStyle: 'italic', marginTop: 4 },
 }
