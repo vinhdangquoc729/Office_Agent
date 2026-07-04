@@ -120,6 +120,9 @@ class _ActivityHandler(AsyncCallbackHandler):
             await self._q.put({"type": "token", "text": token})
 
 
+_MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
+
+
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     ext = Path(file.filename).suffix.lower()
@@ -129,7 +132,21 @@ async def upload_file(file: UploadFile = File(...)):
 
     file_id = uuid.uuid4().hex
     dest = UPLOADS_DIR / f"{file_id}{ext}"
-    dest.write_bytes(await file.read())
+
+    size = 0
+    try:
+        with dest.open("wb") as f:
+            while chunk := await file.read(1024 * 1024):  # đọc từng 1 MB
+                size += len(chunk)
+                if size > _MAX_UPLOAD_BYTES:
+                    dest.unlink(missing_ok=True)
+                    raise HTTPException(413, "File quá lớn. Giới hạn tối đa 100 MB.")
+                f.write(chunk)
+    except HTTPException:
+        raise
+    except Exception as e:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(500, f"Lỗi khi lưu file: {e}")
 
     return {"file_id": file_id, "filename": file.filename, "saved_as": dest.name}
 
@@ -197,7 +214,7 @@ async def chat_websocket(websocket: WebSocket):
         finally:
             await queue.put(None)
 
-    asyncio.create_task(run_graph())
+    graph_task = asyncio.create_task(run_graph())
 
     try:
         while True:
@@ -234,7 +251,7 @@ async def chat_websocket(websocket: WebSocket):
         await websocket.send_json({"type": "done", "output_files": output_files, "content": reply})
 
     except WebSocketDisconnect:
-        pass
+        graph_task.cancel()
     finally:
         try:
             await websocket.close()
@@ -262,7 +279,9 @@ async def get_history(session_id: str):
 
 @router.get("/download/{filename:path}")
 async def download_file(filename: str):
-    file_path = UPLOADS_DIR / filename
+    file_path = (UPLOADS_DIR / filename).resolve()
+    if not file_path.is_relative_to(UPLOADS_DIR.resolve()):
+        raise HTTPException(403, "Forbidden.")
     if not file_path.exists():
         raise HTTPException(404, "File không tồn tại.")
     suffix = Path(filename).suffix.lower()

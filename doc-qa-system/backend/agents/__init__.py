@@ -14,14 +14,24 @@ def parse_json_response(content: str):
     return json.loads(content.strip())
 
 
-def load_prompt(agent_name: str) -> str:
-    path = BASE / "prompts" / f"{agent_name}.md"
-    return path.read_text(encoding="utf-8") if path.exists() else ""
+def load_prompt(agent_name: str, lang: str = "vi") -> str:
+    base = BASE / "prompts"
+    if lang != "vi":
+        p = base / f"{agent_name}.{lang}.md"
+        if p.exists():
+            return p.read_text(encoding="utf-8")
+    p = base / f"{agent_name}.md"
+    return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
-def load_skill(skill_name: str) -> str:
-    path = BASE / "skills" / skill_name / "SKILL.md"
-    return path.read_text(encoding="utf-8") if path.exists() else ""
+def load_skill(skill_name: str, lang: str = "vi") -> str:
+    base = BASE / "skills" / skill_name
+    if lang != "vi":
+        p = base / f"SKILL.{lang}.md"
+        if p.exists():
+            return p.read_text(encoding="utf-8")
+    p = base / "SKILL.md"
+    return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
 def build_system_prompt(*parts: str) -> str:

@@ -6,7 +6,10 @@ from agents import load_prompt, build_system_prompt
 from agents.i18n import lbl
 from graph.state import DocQAState
 
-_SYSTEM = build_system_prompt(load_prompt("response_maker"))
+_SYSTEMS: dict[str, str] = {
+    lang: build_system_prompt(load_prompt("response_maker", lang))
+    for lang in ("vi", "en")
+}
 _llm = ChatOpenAI(model="gpt-4o", temperature=0.1, streaming=True)
 
 
@@ -40,9 +43,10 @@ async def response_maker_node(state: DocQAState) -> dict:
         indent=2,
     )
 
+    system = _SYSTEMS.get(lang, _SYSTEMS["vi"])
     chunks = []
     async for chunk in _llm.astream([
-        {"role": "system", "content": _SYSTEM + lbl(lang, "lang_note")},
+        {"role": "system", "content": system + lbl(lang, "lang_note")},
         {"role": "user", "content": (
             f"{lbl(lang, 'user_request')}: {user_request}\n\n"
             f"has_data: {bool(data)}\n\n"

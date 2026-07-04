@@ -17,8 +17,8 @@ from agents.helpers import pdf_helper
 
 MAX_ITERATIONS = 15
 
-_SKILL_CATALOG = build_skill_catalog()
-_BASE_PROMPT = load_prompt("analyst")
+_BASE_PROMPTS: dict[str, str] = {lang: load_prompt("analyst", lang) for lang in ("vi", "en")}
+_SKILL_CATALOGS: dict[str, str] = {lang: build_skill_catalog(lang) for lang in ("vi", "en")}
 _llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
 
@@ -126,7 +126,7 @@ def analyst_node(state: DocQAState) -> dict:
         """Nhờ PDF helper tóm tắt nội dung từng trang trong khoảng [page_start, page_end] (1-indexed, inclusive).
         file_index: chỉ số file. Nên gọi với batch 5-7 trang mỗi lần."""
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
-        result = pdf_helper.run(path, page_start, page_end)
+        result = pdf_helper.run(path, page_start, page_end, lang)
         return json.dumps(result, ensure_ascii=False)
 
     @tool
@@ -272,8 +272,9 @@ def analyst_node(state: DocQAState) -> dict:
         return result
 
     # --- Skill selection ---
+    catalog = _SKILL_CATALOGS.get(lang, _SKILL_CATALOGS["vi"])
     selector_resp = _llm.invoke([
-        {"role": "system", "content": lbl(lang, "select_prompt", catalog=_SKILL_CATALOG)},
+        {"role": "system", "content": lbl(lang, "select_prompt", catalog=catalog)},
         {"role": "user",   "content": f"file_type: {file_type}\n{lbl(lang, 'request')}: {user_request}"},
     ])
     try:
@@ -283,8 +284,9 @@ def analyst_node(state: DocQAState) -> dict:
     except Exception:
         selected = []
 
-    skill_contents = [activate_skill(slug) for slug in selected if slug]
-    system = build_system_prompt(_BASE_PROMPT, *skill_contents)
+    skill_contents = [activate_skill(slug, lang) for slug in selected if slug]
+    base = _BASE_PROMPTS.get(lang, _BASE_PROMPTS["vi"])
+    system = build_system_prompt(base, *skill_contents)
 
     _pdf_tools = [pdf_get_page_count, pdf_rag_search, pdf_summarize_pages,
                   pdf_read_pages, pdf_read_pages_detailed, pdf_extract_images, pdf_annotate_images,

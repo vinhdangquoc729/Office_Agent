@@ -8,10 +8,10 @@ from agents.i18n import lbl
 from graph.state import DocQAState
 from tools.output_writers import create_pptx
 
-_FALLBACK_SYSTEM = build_system_prompt(
-    load_prompt("slide_creator"),
-    load_skill("slide-creation"),
-)
+_FALLBACK_SYSTEMS: dict[str, str] = {
+    lang: build_system_prompt(load_prompt("slide_creator", lang), load_skill("slide-creation", lang))
+    for lang in ("vi", "en")
+}
 _llm = ChatOpenAI(model="gpt-4o", temperature=0.2)
 
 
@@ -39,8 +39,9 @@ def slide_creator_node(state: DocQAState) -> dict:
     else:
         # Fallback: gọi LLM nếu analyst chưa build slides (file không phải PDF, hoặc skill chưa kích hoạt)
         input_text = json.dumps(analysis, ensure_ascii=False, indent=2) if analysis else state.get("summary", "")
+        fallback_system = _FALLBACK_SYSTEMS.get(lang, _FALLBACK_SYSTEMS["vi"])
         response = _llm.invoke([
-            {"role": "system", "content": _FALLBACK_SYSTEM + lbl(lang, "lang_note")},
+            {"role": "system", "content": fallback_system + lbl(lang, "lang_note")},
             {"role": "user", "content": f"{lbl(lang, 'request')}: {user_request}\n\n{lbl(lang, 'analysis_result')}:\n{input_text}"},
         ])
         raw = response.content.strip()

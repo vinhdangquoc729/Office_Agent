@@ -9,15 +9,18 @@ from agents.i18n import lbl
 from graph.state import DocQAState
 from tools.file_readers import read_file, read_pdf_meta, read_tabular_meta
 
-_SYSTEM = build_system_prompt(
-    load_prompt("document_loader"),
-    load_skill("pdf-extraction"),
-    load_skill("excel-analysis"),
-)
+_SYSTEMS: dict[str, str] = {
+    lang: build_system_prompt(
+        load_prompt("document_loader", lang),
+        load_skill("pdf-extraction", lang),
+        load_skill("excel-analysis", lang),
+    )
+    for lang in ("vi", "en")
+}
 _llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
 
-def _load_one(file_path: str) -> dict:
+def _load_one(file_path: str, lang: str = "vi") -> dict:
     """Load 1 file, trả về dict {file_type, content, suggested_header_row, sheets_columns}."""
     ext = Path(file_path).suffix.lower()
 
@@ -36,8 +39,9 @@ def _load_one(file_path: str) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
+    system = _SYSTEMS.get(lang, _SYSTEMS["vi"])
     response = _llm.invoke([
-        {"role": "system", "content": _SYSTEM},
+        {"role": "system", "content": system},
         {"role": "user", "content": user_content},
     ])
 
@@ -82,7 +86,7 @@ def document_loader_node(state: DocQAState) -> dict:
 
     # Single file: giữ format cũ để backward compat
     if len(file_paths) == 1:
-        result = _load_one(file_paths[0])
+        result = _load_one(file_paths[0], lang)
         if "error" in result:
             return {"error": result["error"], "file_content": ""}
         file_type = result["file_type"]
@@ -103,7 +107,7 @@ def document_loader_node(state: DocQAState) -> dict:
     files_data = []
     primary_type = None
     for i, fp in enumerate(file_paths):
-        result = _load_one(fp)
+        result = _load_one(fp, lang)
         if "error" in result:
             return {"error": lbl(lang, "file_read_error", name=Path(fp).name, error=result["error"]), "file_content": ""}
         if primary_type is None:
