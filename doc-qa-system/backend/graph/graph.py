@@ -1,5 +1,4 @@
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
 
 from graph.state import DocQAState
 from graph.router import route_after_supervisor, route_after_analyst, route_after_reporter
@@ -13,7 +12,7 @@ from agents.chat import chat_node
 from agents.response_maker import response_maker_node
 
 
-def build_graph():
+def build_graph(checkpointer):
     g = StateGraph(DocQAState)
 
     g.add_node("supervisor", supervisor_node)
@@ -50,7 +49,4 @@ def build_graph():
     g.add_edge("summarizer", END)
     g.add_edge("slide_creator", END)
 
-    return g.compile(checkpointer=MemorySaver())
-
-
-graph_app = build_graph()
+    return g.compile(checkpointer=checkpointer)

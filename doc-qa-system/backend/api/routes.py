@@ -3,14 +3,13 @@ import json
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
 
 from agents import load_prompt
-from graph.graph import graph_app
 
 _guard_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 _GUARD_SYSTEM = load_prompt("input_guard")
@@ -69,6 +68,9 @@ TOOL_LABELS = {
         "pdf_extract_images":      lambda a: "Đang trích xuất ảnh...",
         "pdf_read_pages_detailed": lambda a: f"Đang đọc chi tiết trang {a.get('page_start')}-{a.get('page_end')}...",
         "run_code":                lambda a: "Đang thực thi code...",
+        "load_skill_content":      lambda a: f"Đang tải skill '{a.get('slug', '')}'...",
+        "read_reference":          lambda a: f"Đang đọc '{a.get('filename', '')}'...",
+        "read_script_file":        lambda a: f"Đang đọc '{a.get('filename', '')}'...",
     },
     "en": {
         "pdf_read_pages":          lambda a: f"Reading pages {a.get('page_start')}-{a.get('page_end')}...",
@@ -79,6 +81,9 @@ TOOL_LABELS = {
         "pdf_extract_images":      lambda a: "Extracting images...",
         "pdf_read_pages_detailed": lambda a: f"Reading detailed pages {a.get('page_start')}-{a.get('page_end')}...",
         "run_code":                lambda a: "Executing code...",
+        "load_skill_content":      lambda a: f"Loading skill '{a.get('slug', '')}'...",
+        "read_reference":          lambda a: f"Reading '{a.get('filename', '')}'...",
+        "read_script_file":        lambda a: f"Reading '{a.get('filename', '')}'...",
     },
 }
 
@@ -202,9 +207,11 @@ async def chat_websocket(websocket: WebSocket):
     queue: asyncio.Queue = asyncio.Queue()
     final_result: dict = {}
 
+    _graph = websocket.app.state.graph_app
+
     async def run_graph():
         try:
-            result = await graph_app.ainvoke(
+            result = await _graph.ainvoke(
                 input_state,
                 config={**config, "callbacks": [_ActivityHandler(queue, lang)]},
             )
@@ -246,7 +253,7 @@ async def chat_websocket(websocket: WebSocket):
 
         reply = final_result.get("summary") or final_result.get("analysis", {}).get("prose_summary", "")
         if reply:
-            await graph_app.aupdate_state(config, {"messages": [AIMessage(content=reply)]})
+            await _graph.aupdate_state(config, {"messages": [AIMessage(content=reply)]})
 
         await websocket.send_json({"type": "done", "output_files": output_files, "content": reply})
 
@@ -260,10 +267,10 @@ async def chat_websocket(websocket: WebSocket):
 
 
 @router.get("/history/{session_id}")
-async def get_history(session_id: str):
+async def get_history(session_id: str, request: Request):
     config = {"configurable": {"thread_id": session_id}}
 
-    state = await graph_app.aget_state(config)
+    state = await request.app.state.graph_app.aget_state(config)
     if not state or not state.values:
         return {"messages": []}
 

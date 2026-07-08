@@ -1,84 +1,127 @@
 ---
 name: slide-content
-description: Guidelines for the analyst to prepare slide outline content when a presentation is requested
+description: Guidelines for the analyst to prepare detailed presentation content when a slide deck is requested
 ---
 
-## Mandatory Task
+## Role and workflow
 
-When this skill is activated, the "slides" field in the output JSON MUST be filled — this is the primary output of the request:
-- Read the document thoroughly to gather enough information for each slide
-- Extract images from PDFs if the document contains embedded figures (prioritize pages with images)
-- Build the "slides" field before finishing — do NOT return output with "slides" still as []
+When this skill is activated, the analyst reads the document and builds the slide_outline as follows:
 
-## The "slides" Field in Output
+Call `pdf_summarize_pages` in batches of 5-7 pages. After **each batch**, immediately act on pages worth following up — do not wait until all pages are summarized:
+- Pages with content important to the presentation → call `pdf_read_pages` to read in detail
+- Pages with non-empty `images[]` where any image is larger than 50pt → call `pdf_extract_images` then `pdf_annotate_images` right away
 
-"slides" is an array of slides in order. Each element follows one of the 6 layout schemas below:
+Once enough has been read and extracted, build the `slide_outline` JSON with absolute paths from the manifest filled into `images[]`. Return ONLY JSON — no prose text, no code block wrapper.
 
-Layout cover — title slide, always the first slide:
-{"layout": "cover", "title": "Report Title", "subtitle": "Author / Date / Course"}
+The analyst owns the content. The slide creator owns the layout and visual form.
 
-Layout bullets — bullet list, most commonly used:
-Each bullet CAN be a plain string, or an object {"text": "...", "sub": "..."} for additional explanation.
-{"layout": "bullets", "number": 1, "title": "Key Results for 2024", "bullets": [
-  {"text": "Q4 +340% vs Q3", "sub": "Highest growth ever recorded"},
-  {"text": "Product A accounts for 67% of revenue", "sub": "Up from 45% year-over-year"},
-  "Northern region leads"
-]}
+## Output: "slide_outline" field in analysis
 
-Layout bullets_image1 — bullets + 1 image (position auto-adjusted by image orientation):
-{"layout": "bullets_image1", "number": 2, "title": "System Architecture", "bullets": ["3-step processing pipeline", "Automatic entity linking"], "images": ["/absolute/path/image.png"], "captions": ["Figure 5: NLP pipeline architecture diagram"]}
+Populate the `slide_outline` field with this structure:
 
-Layout bullets_image2 — bullets + 2 images (position auto-adjusted):
-{"layout": "bullets_image2", "number": 3, "title": "Model Comparison", "bullets": ["PhoBERT F1 = 0.724", "Baseline F1 = 0.61"], "images": ["/path/img1.png", "/path/img2.png"], "captions": ["Figure 8: Accuracy per epoch", "Figure 9: Confusion matrix"]}
+```json
+{
+  "slide_outline": {
+    "theme": "cleanCorporate",
+    "presentation_title": "Presentation Title",
+    "estimated_duration": "15 min",
+    "sections": [
+      {
+        "heading": "Section heading",
+        "type_hint": "content",
+        "narrative": "Full detailed content to be presented in this section...",
+        "metrics": [],
+        "images": []
+      }
+    ]
+  }
+}
+```
 
-Layout images — 1 or 2 images, no bullets:
-{"layout": "images", "number": 4, "title": "Sentiment Correlation Chart", "images": ["/path/chart.png"], "captions": ["Figure 12: Lag 0-5 day correlation"]}
+## Choosing a theme
 
-Layout image_text — image + paragraph (position auto-adjusted):
-{"layout": "image_text", "number": 5, "title": "Event Analysis", "images": ["/path/event.png"], "captions": ["Figure 15: Cumulative return after event"], "text": "Stock prices reacted strongly within 1 day of major events, average amplitude ±3.2%."}
+| Theme | Best for |
+|---|---|
+| cleanCorporate | Corporate reports, formal presentations (default) |
+| darkMonospace | Technical docs, tech, AI/ML |
+| swissModern | Marketing, design, creative |
+| boldSignal | Startup, pitch decks |
+| warmMinimal | Education, courses, training |
 
-## Bullet Writing Rules
+## Outline size by duration
 
-- 3-6 bullets per content slide (except cover and Q&A slides)
-- Each bullet text: 5-15 words
-- Start with a specific figure or action word (not "The", "About", "Regarding")
-- Slide title = conclusion or key message, not a topic label
+| Duration | Expected sections | Recommended structure |
+|---|---|---|
+| 5 min | 4-5 | Hook, 2-3 key points, Close |
+| 15 min | 7-10 | Intro, 3-4 chapters, Summary, Close |
+| 30 min | 12-18 | Title, Agenda, 5-6 chapters, Q&A |
+| 45+ min | 18-25 | Title, Agenda, 7-8 chapters, Summary, Q&A |
 
-Sub-bullets ("sub" field):
-- Use for slides WITHOUT images (layout "bullets") to elaborate on the main bullet
-- Each sub: max 15 words, concise and specific
-- Slides with images (bullets_image1, bullets_image2) should NOT use sub — the image already illustrates
+If the user does not specify a duration, default to 15 minutes.
 
-## Image Rules
+## Slide types (type_hint)
 
-- Only use image layouts if you have real image paths from pdf_extract_images
-- Use the "path" field from the manifest — absolute path to the PNG file
-- Prefer images that have an "about" annotation
-- Do not place fake paths in images if extraction hasn't been done
-- Image position (horizontal/vertical, top/bottom, left/right) is handled automatically by the renderer
-- "captions" field: array of strings parallel to "images" — one caption per image in order
-- Caption from manifest "about" field or from caption text near the image in the PDF (e.g. "Figure X: ...")
-- If no caption is available, omit "captions" or leave as []
+| type_hint | Use when |
+|---|---|
+| title | Opening / cover slide |
+| agenda | List of major sections |
+| section-divider | Transitioning to a new chapter |
+| content | Presenting an argument, analysis, or explanation |
+| metrics | 2-4 numbers that need to stand out visually |
+| comparison | Comparing 2 options, periods, or subjects |
+| timeline | Sequence of events or milestones |
+| feature-grid | 3-6 features, characteristics, or highlights |
+| quote | A notable quotation |
+| image-focus | Section driven primarily by visuals |
+| closing | Conclusion, next actions, Q&A |
 
-## Workflow When Creating Slides from a PDF
+## Narrative requirements
 
-Step 1: Read document content — use pdf_rag_search or pdf_summarize_pages to understand the structure.
-Step 2: Read key sections in detail — use pdf_read_pages for pages with data, tables, results.
-Step 3 (if document has images): Call pdf_extract_images for pages with relevant figures.
-Step 4 (if images exist): Call pdf_read_pages for those pages, then annotate with pdf_annotate_images.
-Step 5: Build the "slides" outline based on content read.
+Every section MUST have a `narrative` detailed enough that someone who has not read the source document can understand the content:
 
-## Standard Deck Structure
+- Write in complete sentences — no keyword lists or shorthand
+- Use specific numbers — avoid vague terms like "high", "many", "significant"
+- Explain context and meaning, not just raw facts
+- State the conclusion or key message of the section clearly
+- Minimum 4-6 sentences; no upper limit
 
-- Slide 1: layout "cover" — title + author/date
-- Slide 2: layout "bullets" — agenda (3-5 major sections to cover)
-- Slides 3 to N-1: main content, one key finding or major topic per slide
-- Slide N-1: layout "bullets" — conclusion + recommended actions
-- Slide N: layout "bullets", bullets=[] — "Q&A"
+Example CORRECT:
+```
+"The total number of students appearing in both terms is 229, representing 45% of all
+enrolled students for the year. This group shows high stability — the class-change rate
+is only 8%, well below the department average of 15%. Room 308A is the most-used
+classroom at 12 sessions per week, followed by 204B (9 sessions) and 105C (7 sessions).
+This concentration on 308A raises scheduling questions for next term."
+```
 
-## Slide Count by Document Length
+Example WRONG:
+```
+"229 common students, room 308A is busiest"
+```
 
-Short report (under 15 pages): 6-8 slides
-Medium report (15-40 pages): 10-14 slides
-Long report (over 40 pages): 14-20 slides
-If user requests "detailed" or "comprehensive": no cap; ~1-3 slides per major chapter/section
+## metrics and images fields
+
+**metrics**: array of strings describing key data points — include value and context:
+```json
+"metrics": ["229 students / 2 terms", "+340% Q4 revenue vs Q3", "308A: 12 sessions/week"]
+```
+
+**images**: absolute paths from pdf_extract_images only — do not invent paths.
+
+## When and how to extract images
+
+After `pdf_summarize_pages` completes, **you must** call `pdf_extract_images` for pages whose summary suggests meaningful visual content:
+- Page is described as "contains only images" or "no extractable text" but has a non-empty `images[]` — typically a full-page figure or diagram
+- Page contains charts, architecture diagrams, or infographics relevant to the presentation
+- A section has `type_hint: "image-focus"` or `metrics` and the corresponding page has images
+
+**Skip extraction when:** images are small decorative elements (logos, icons, headers), or the document is not a PDF.
+
+**Workflow:**
+
+1. Call `pdf_extract_images(file_index, page_start, page_end)` for the pages identified above
+2. From the returned manifest, skip images smaller than 50pt or identified as logos/watermarks
+3. Call `pdf_annotate_images(file_index, annotations)` to write a description for each selected image
+4. Add the absolute path to the `images[]` field of the corresponding section
+
+Use the exact `path` value from the manifest returned by `pdf_extract_images`. Do NOT invent or guess paths.

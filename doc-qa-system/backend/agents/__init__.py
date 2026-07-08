@@ -5,13 +5,34 @@ BASE = Path(__file__).parent.parent
 
 
 def parse_json_response(content: str):
-    """Parse JSON từ LLM response, tự động bỏ markdown code block nếu có."""
-    content = content.strip()
-    if content.startswith("```"):
-        content = content.split("\n", 1)[1]
-        if content.endswith("```"):
-            content = content.rsplit("```", 1)[0]
-    return json.loads(content.strip())
+    """Parse JSON từ LLM response.
+
+    Thử theo thứ tự:
+    1. JSON trong code block bất kỳ vị trí (prose + ```json ... ```)
+    2. Strip fence đầu/cuối
+    3. Tìm { đầu tiên và parse từ đó
+    """
+    import re as _re
+    text = content.strip()
+    # 1. code block anywhere
+    m = _re.search(r"```(?:json)?\s*\n([\s\S]*?)\n?```", text)
+    if m:
+        try:
+            return json.loads(m.group(1).strip())
+        except Exception:
+            pass
+    # 2. strip leading/trailing fence
+    t = _re.sub(r"^```[a-zA-Z]*\n?", "", text)
+    t = _re.sub(r"\n?```$", "", t).strip()
+    try:
+        return json.loads(t)
+    except Exception:
+        pass
+    # 3. first { in text
+    idx = text.find("{")
+    if idx >= 0:
+        return json.loads(text[idx:])
+    raise ValueError("No JSON found in response")
 
 
 def load_prompt(agent_name: str, lang: str = "vi") -> str:

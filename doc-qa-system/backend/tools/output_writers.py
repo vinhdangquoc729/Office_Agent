@@ -1,3 +1,7 @@
+import json
+import subprocess
+import sys
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -8,6 +12,10 @@ from pptx.util import Inches, Pt as PPt
 from pptx.dml.color import RGBColor as PRGB
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
+
+_SCRIPTS_DIR = Path(__file__).parent.parent / "skills" / "pptx-slides" / "scripts"
+_GENERATE_TS = _SCRIPTS_DIR / "generate.ts"
+_NPX = "npx.cmd" if sys.platform == "win32" else "npx"
 
 UPLOADS_DIR = Path(__file__).parent.parent / "uploads"
 REPORTS_DIR = UPLOADS_DIR / "reports"
@@ -306,15 +314,82 @@ _LAYOUTS = {
 }
 
 
-def create_pptx(outline: list[dict], filename: str | None = None) -> str:
+def create_pptx(outline: list[dict] | dict, filename: str | None = None) -> str:
     if not filename:
         filename = f"slides_{uuid.uuid4().hex[:8]}.pptx"
     output_path = SLIDES_DIR / filename
+
+    # Build deck spec: accept either plain list (old) or {theme, slides} dict (new)
+    if isinstance(outline, dict):
+        deck_spec = outline
+    else:
+        deck_spec = {"slides": outline}
+
+    # Try Node.js generator first
+    if _GENERATE_TS.exists():
+        try:
+            return _create_pptx_node(deck_spec, output_path)
+        except Exception:
+            pass  # fall through to Python fallback
+
+    # Python fallback (old renderer, list format only)
+    slides = deck_spec.get("slides", deck_spec) if isinstance(deck_spec, dict) else deck_spec
     prs = _new_presentation()
-    for slide_data in outline:
+    for slide_data in slides:
         fn = _LAYOUTS.get(slide_data.get("layout", "bullets"), _LAYOUTS["bullets"])
         fn(prs, slide_data)
     prs.save(output_path)
+    return str(output_path)
+
+
+def run_ts_script(ts_code: str, filename: str | None = None) -> str:
+    """Execute generated TypeScript PptxGenJS code and return the output PPTX path."""
+    if not filename:
+        filename = f"slides_{uuid.uuid4().hex[:8]}.pptx"
+    output_path = SLIDES_DIR / filename
+
+    # decorative.ts hardcodes slideW=10, slideH=5.625 — force LAYOUT_16x9 to match
+    ts_code = ts_code.replace("'LAYOUT_WIDE'", "'LAYOUT_16x9'").replace('"LAYOUT_WIDE"', '"LAYOUT_16x9"')
+
+    # Place temp script alongside helpers so relative imports (./theme.js) resolve
+    tmp_ts = _SCRIPTS_DIR / f"_gen_{uuid.uuid4().hex[:8]}.ts"
+    try:
+        tmp_ts.write_text(ts_code, encoding="utf-8")
+        result = subprocess.run(
+            [_NPX, "--yes", "tsx", str(tmp_ts), str(output_path)],
+            cwd=str(_SCRIPTS_DIR),
+            capture_output=True,
+            timeout=120,
+            env={**__import__("os").environ, "NODE_NO_WARNINGS": "1"},
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.decode("utf-8", errors="replace")
+            raise RuntimeError(f"TS script failed:\n{stderr[:800]}")
+        return str(output_path)
+    finally:
+        tmp_ts.unlink(missing_ok=True)
+
+
+def _create_pptx_node(deck_spec: dict, output_path: Path) -> str:
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as tmp:
+        json.dump(deck_spec, tmp, ensure_ascii=False)
+        tmp_path = tmp.name
+
+    result = subprocess.run(
+        [_NPX, "--yes", "tsx", str(_GENERATE_TS), tmp_path, str(output_path)],
+        cwd=str(_SCRIPTS_DIR),
+        capture_output=True,
+        timeout=60,
+        env={**__import__("os").environ, "NODE_NO_WARNINGS": "1"},
+    )
+    Path(tmp_path).unlink(missing_ok=True)
+
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace")
+        raise RuntimeError(f"generate.ts failed: {stderr[:500]}")
+
     return str(output_path)
 
 

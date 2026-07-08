@@ -13,22 +13,25 @@ Always return JSON. For questions that require listing specific data (names, tab
 {
   "key_findings": ["<finding 1>", "<finding 2>"],
   "data_points": {"<metric>": "<value>"},
-  "data": "<raw data as markdown table or full list, do not truncate>",
+  "data": "<raw data as a markdown text or markdown table or full list — MUST be a string, NOT an object or array>",
   "anomalies": ["<anomaly 1>"],
   "trends": ["<trend 1>"],
   "recommendations": ["<rec 1>"],
   "sources": [{"file": "<filename>", "page": <page number>, "note": "<brief description of what was found on that page>"}],
   "prose_summary": "<short narrative, must NOT contain data already present in data field>",
-  "slides": []
+  "slide_outline": null
 }
 
-"slides" field:
+If there are multiple tables (multiple sheets), concatenate all into a single string with section headers:
+  "data": "**Sheet 'Q1'**\n\n| Col1 | Col2 | ...\n\n**Sheet 'Q2'**\n\n| Col1 | Col2 | ..."
+
+"slide_outline" field:
 - Only fill when the request is to create a slide/presentation (skill slide-content is activated).
-- Leave as [] if not creating slides.
-- IMPORTANT: "slides" must be a JSON array directly in the output object — do NOT embed it in "prose_summary" as a string or code block.
-- Correct: {"slides": [{"layout": "cover", "title": "..."}, ...], "prose_summary": "Slides created."}
-- Wrong: {"slides": [], "prose_summary": "```json\n{\"slides\": [...]}\n```"}
-- See skill slide-content for detailed schema of each layout.
+- Leave as null if not creating slides.
+- IMPORTANT: "slide_outline" must be a JSON object directly in the output — do NOT embed it in "prose_summary" as a string or code block.
+- Correct: {"slide_outline": {"theme": "cleanCorporate", "sections": [...]}, "prose_summary": "Outline prepared."}
+- Wrong: {"slide_outline": null, "prose_summary": "```json\n{\"slide_outline\": ...}\n```"}
+- See skill slide-content for the detailed slide_outline schema.
 
 Sources rules:
 - List every page read to answer this request.

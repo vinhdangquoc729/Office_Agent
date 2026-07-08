@@ -13,22 +13,25 @@ Luôn trả về JSON. Với câu hỏi cần liệt kê dữ liệu cụ thể 
 {
   "key_findings": ["<finding 1>", "<finding 2>"],
   "data_points": {"<metric>": "<value>"},
-  "data": "<dữ liệu thô dạng markdown table hoặc danh sách đầy đủ, không lược bỏ>",
+  "data": "<dữ liệu thô dạng markdown text hoặc markdown table hoặc danh sách đầy đủ, không lược bỏ — PHẢI là string, KHÔNG phải object hay array>",
   "anomalies": ["<anomaly 1>"],
   "trends": ["<trend 1>"],
   "recommendations": ["<rec 1>"],
   "sources": [{"file": "<tên file>", "page": <số trang>, "note": "<mô tả ngắn nội dung trích từ trang đó>"}],
   "prose_summary": "<tóm tắt ngắn, KHÔNG chứa dữ liệu đã có trong data>",
-  "slides": []
+  "slide_outline": null
 }
 
-Trường "slides":
+Nếu có nhiều bảng (nhiều sheet), ghép tất cả vào một string duy nhất với tiêu đề phân cách:
+  "data": "**Sheet 'hè'**\n\n| STT | Họ và tên | ...\n\n**Sheet '2026.1'**\n\n| STT | Họ và tên | ..."
+
+Trường "slide_outline":
 - Chỉ điền khi yêu cầu là tạo slide/presentation (skill slide-content được kích hoạt).
-- Để [] nếu không tạo slide.
-- QUAN TRỌNG: "slides" phải là JSON array trực tiếp trong object output — KHÔNG được nhúng vào "prose_summary" dưới dạng string hay code block.
-- Ví dụ đúng: {"slides": [{"layout": "cover", "title": "..."}, ...], "prose_summary": "Đã tạo slide."}
-- Ví dụ sai: {"slides": [], "prose_summary": "```json\n{\"slides\": [...]}\n```"}
-- Schema chi tiết của từng layout xem trong skill slide-content.
+- Để null nếu không tạo slide.
+- QUAN TRỌNG: "slide_outline" phải là JSON object trực tiếp trong output — KHÔNG nhúng vào "prose_summary" dưới dạng string hay code block.
+- Ví dụ đúng: {"slide_outline": {"theme": "cleanCorporate", "sections": [...]}, "prose_summary": "Đã soạn outline."}
+- Ví dụ sai: {"slide_outline": null, "prose_summary": "```json\n{\"slide_outline\": ...}\n```"}
+- Schema chi tiết của slide_outline xem trong skill slide-content.
 
 Quy tắc sources:
 - Liệt kê mọi trang đã đọc để trả lời yêu cầu này.

@@ -1,84 +1,127 @@
 ---
 name: slide-content
-description: Hướng dẫn analyst chuẩn bị nội dung outline slide khi yêu cầu tạo slide thuyết trình
+description: Hướng dẫn analyst soạn nội dung chi tiết cho bài thuyết trình khi được yêu cầu tạo slide
 ---
 
-## Nhiệm vụ BẮT BUỘC
+## Nhiệm vụ và quy trình
 
-Khi skill này được kích hoạt, trường "slides" trong output JSON PHẢI được điền — đây là output chính của yêu cầu:
-- Đọc kỹ tài liệu để có đủ thông tin cho từng slide
-- Extract ảnh từ PDF nếu tài liệu có hình (ưu tiên extract các trang có hình ảnh nhúng)
-- Build trường "slides" trước khi kết thúc — KHÔNG được trả output mà "slides" vẫn là []
+Khi skill này được kích hoạt, analyst đọc tài liệu và soạn slide_outline theo quy trình sau:
 
-## Trường "slides" trong output
+Gọi `pdf_summarize_pages` từng batch 5-7 trang. Sau **mỗi batch**, ngay lập tức xử lý những trang đáng chú ý thay vì chờ summarize hết:
+- Trang có nội dung quan trọng cho bài thuyết trình → gọi `pdf_read_pages` để đọc chi tiết
+- Trang có `images[]` không rỗng với ảnh kích thước > 50pt → gọi `pdf_extract_images` rồi `pdf_annotate_images` ngay
 
-"slides" là array các slide theo thứ tự. Mỗi phần tử tuân theo một trong 6 schema layout sau:
+Sau khi đã đọc/extract đủ, xây dựng `slide_outline` JSON với path tuyệt đối từ manifest điền vào `images[]`. Trả về ONLY JSON — không có prose text, không có code block wrapper.
 
-Layout cover — slide bìa, luôn là slide đầu tiên:
-{"layout": "cover", "title": "Tiêu đề báo cáo", "subtitle": "Tác giả / Ngày / Học phần"}
+Analyst chịu trách nhiệm về nội dung. Slide creator chịu trách nhiệm về hình thức và bố cục.
 
-Layout bullets — danh sách bullet, dùng phổ biến nhất:
-Mỗi bullet CÓ THỂ là string đơn giản, hoặc object {"text": "...", "sub": "..."} nếu cần giải thích thêm.
-{"layout": "bullets", "number": 1, "title": "Kết quả nổi bật năm 2024", "bullets": [
-  {"text": "Q4 +340% so Q3", "sub": "Tăng trưởng cao nhất từ trước đến nay"},
-  {"text": "Sản phẩm A chiếm 67% doanh thu", "sub": "Tăng từ 45% so cùng kỳ"},
-  "Khu vực Miền Bắc dẫn đầu"
-]}
+## Output: trường "slide_outline" trong analysis
 
-Layout bullets_image1 — bullets + 1 ảnh (vị trí tự động theo chiều ảnh):
-{"layout": "bullets_image1", "number": 2, "title": "Kiến trúc hệ thống", "bullets": ["Pipeline 3 bước xử lý", "Entity Linking tự động"], "images": ["/tuyệt đối/đường/dẫn/ảnh.png"], "captions": ["Hình 5: Sơ đồ kiến trúc pipeline NLP"]}
+Điền trường `slide_outline` với cấu trúc sau:
 
-Layout bullets_image2 — bullets + 2 ảnh (vị trí tự động theo chiều ảnh):
-{"layout": "bullets_image2", "number": 3, "title": "So sánh mô hình", "bullets": ["PhoBERT F1 = 0.724", "Baseline F1 = 0.61"], "images": ["/path/img1.png", "/path/img2.png"], "captions": ["Hình 8: Accuracy theo epoch", "Hình 9: Confusion matrix"]}
+```json
+{
+  "slide_outline": {
+    "theme": "cleanCorporate",
+    "presentation_title": "Tiêu đề bài thuyết trình",
+    "estimated_duration": "15 min",
+    "sections": [
+      {
+        "heading": "Tiêu đề phần",
+        "type_hint": "content",
+        "narrative": "Nội dung đầy đủ sẽ trình bày trong phần này...",
+        "metrics": [],
+        "images": []
+      }
+    ]
+  }
+}
+```
 
-Layout images — 1 hoặc 2 ảnh, không có bullet:
-{"layout": "images", "number": 4, "title": "Biểu đồ tương quan sentiment", "images": ["/path/chart.png"], "captions": ["Hình 12: Tương quan lag 0-5 ngày"]}
+## Chọn theme
 
-Layout image_text — ảnh + đoạn văn (vị trí tự động theo chiều ảnh):
-{"layout": "image_text", "number": 5, "title": "Phân tích sự kiện", "images": ["/path/event.png"], "captions": ["Hình 15: Cumulative return sau sự kiện"], "text": "Giá cổ phiếu phản ứng mạnh trong vòng 1 ngày sau sự kiện lớn, biên độ trung bình ±3.2%."}
+| Theme | Phù hợp với |
+|---|---|
+| cleanCorporate | Báo cáo doanh nghiệp, trình bày chính thức (mặc định) |
+| darkMonospace | Tài liệu kỹ thuật, tech, AI/ML |
+| swissModern | Marketing, thiết kế, sáng tạo |
+| boldSignal | Startup, pitch deck |
+| warmMinimal | Giáo dục, khóa học, đào tạo |
 
-## Quy tắc viết bullet
+## Quy mô outline theo thời lượng
 
-- Từ 3-6 bullets mỗi slide content (trừ slide cover và slide Q&A cuối)
-- Mỗi bullet text có từ 5-15 từ
-- Bắt đầu bằng số liệu cụ thể hoặc từ hành động (không bắt đầu bằng "Các", "Về")
-- Tiêu đề slide = kết luận hoặc thông điệp chính, không phải nhãn chủ đề
+| Thời lượng | Số section dự kiến | Cấu trúc khuyến nghị |
+|---|---|---|
+| 5 phút | 4-5 | Hook, 2-3 điểm chính, Kết |
+| 15 phút | 7-10 | Mở đầu, 3-4 chương, Tóm tắt, Kết |
+| 30 phút | 12-18 | Title, Agenda, 5-6 chương, Q&A |
+| 45+ phút | 18-25 | Title, Agenda, 7-8 chương, Summary, Q&A |
 
-Sub-bullet (trường "sub"):
-- Nên dùng cho slide KHÔNG có ảnh (layout "bullets") để giải thích thêm ý nghĩa bullet chính
-- Mỗi sub tối đa 15 từ, ngắn gọn và cụ thể
-- Slide có ảnh (bullets_image1, bullets_image2) KHÔNG dùng sub vì đã có ảnh minh hoạ
+Nếu người dùng không nêu thời lượng, mặc định 15 phút.
 
-## Quy tắc dùng ảnh
+## Loại slide (type_hint)
 
-- Chỉ dùng layout có ảnh nếu đã có đường dẫn ảnh thực từ pdf_extract_images
-- Dùng trường "path" từ manifest — đường dẫn tuyệt đối đến file PNG
-- Ưu tiên ảnh có trường "about" đã được annotate
-- Không đặt đường dẫn giả vào images nếu chưa extract
-- Vị trí ảnh (ngang/dọc, trên/dưới, trái/phải) được xử lý tự động bởi renderer
-- Trường "captions": array string song song với "images" — caption cho từng ảnh theo thứ tự
-- Caption lấy từ trường "about" trong manifest hoặc từ caption text gần ảnh trong PDF (ví dụ "Hình X: ...")
-- Nếu không có caption, bỏ qua trường "captions" hoặc để []
+| type_hint | Dùng khi |
+|---|---|
+| title | Slide bìa, mở đầu toàn bài |
+| agenda | Danh sách mục lớn của bài |
+| section-divider | Chuyển sang chương/phần mới |
+| content | Trình bày luận điểm, phân tích, giải thích |
+| metrics | 2-4 con số quan trọng cần nổi bật |
+| comparison | So sánh 2 phương án, giai đoạn, đối tượng |
+| timeline | Chuỗi sự kiện hoặc mốc thời gian |
+| feature-grid | 3-6 tính năng, đặc điểm, điểm mạnh |
+| quote | Trích dẫn đáng chú ý |
+| image-focus | Phần chủ yếu dựa vào hình ảnh |
+| closing | Kết luận, đề xuất hành động, Q&A |
 
-## Luồng làm việc khi tạo slide từ PDF
+## Yêu cầu về narrative
 
-Bước 1: Đọc nội dung tài liệu — dùng pdf_rag_search hoặc pdf_summarize_pages để nắm cấu trúc.
-Bước 2: Đọc chi tiết các phần quan trọng — dùng pdf_read_pages cho các trang có dữ liệu, bảng biểu, kết quả.
-Bước 3 (nếu tài liệu có hình): Gọi pdf_extract_images cho các trang có hình ảnh liên quan.
-Bước 4 (nếu có ảnh): Gọi pdf_read_pages cho các trang đó, annotate bằng pdf_annotate_images.
-Bước 5: Build outline "slides" dựa trên nội dung đã đọc.
+Mỗi section PHẢI có `narrative` đủ chi tiết để người không đọc tài liệu gốc vẫn nắm được nội dung:
 
-## Cấu trúc deck chuẩn
+- Viết đầy đủ câu — không viết tắt hay liệt kê keywords
+- Đưa số liệu cụ thể, không dùng "cao", "nhiều", "đáng kể"
+- Giải thích ngữ cảnh và ý nghĩa, không chỉ nêu facts
+- Nêu rõ kết luận hoặc thông điệp chính của phần đó
+- Dài ít nhất 4-6 câu, không có giới hạn trên
 
-- Slide 1: layout "cover" — tiêu đề + tác giả/ngày
-- Slide 2: layout "bullets" — agenda (3-5 mục lớn sẽ trình bày)
-- Slide 3 đến N-1: nội dung chính, mỗi key finding hoặc chủ đề lớn là 1 slide
-- Slide N-1: layout "bullets" — kết luận + đề xuất hành động
-- Slide N: layout "bullets", bullets=[] — "Câu hỏi & Thảo luận"
+Ví dụ ĐÚNG:
+```
+"Tổng số sinh viên xuất hiện trong cả 2 kỳ là 229 người, chiếm 45% tổng sinh viên
+toàn khóa. Đây là nhóm có tính ổn định cao — tỷ lệ chuyển lớp chỉ 8%, thấp hơn
+mức trung bình khoa 15%. Phòng học được sử dụng nhiều nhất là 308A với 12 buổi/tuần,
+tiếp theo là 204B (9 buổi) và 105C (7 buổi). Sự tập trung vào 308A đặt ra câu hỏi
+về phân bổ phòng học cho kỳ tới."
+```
 
-## Số slide theo độ dài báo cáo
+Ví dụ SAI:
+```
+"229 sinh viên chung, phòng 308A đông nhất"
+```
 
-Báo cáo ngắn (dưới 15 trang): 6-8 slide
-Báo cáo trung bình (15-40 trang): 10-14 slide
-Báo cáo dài (trên 40 trang): 14-20 slide
-Nếu user yêu cầu "chi tiết" hoặc "đầy đủ": không giới hạn, mỗi chương/phần lớn có khoảng 1-3 slide
+## Trường metrics và images
+
+**metrics**: mảng string mô tả chỉ số quan trọng — ghi rõ giá trị và ngữ cảnh:
+```json
+"metrics": ["229 sinh viên / 2 kỳ", "+340% doanh thu Q4 so Q3", "308A: 12 buổi/tuần"]
+```
+
+**images**: đường dẫn tuyệt đối từ pdf_extract_images — chỉ điền nếu đã extract được ảnh thực, không đặt đường dẫn giả.
+
+## Khi nào và cách trích xuất ảnh
+
+Sau khi `pdf_summarize_pages` xong, **phải** gọi `pdf_extract_images` cho những trang mà summary của trang đó gợi ý có hình ảnh nội dung quan trọng:
+- Trang bị ghi là "contains only images" hoặc "no extractable text" nhưng có `images[]` không rỗng → đây thường là sơ đồ hoặc hình full-page
+- Trang chứa biểu đồ, sơ đồ kiến trúc, infographic liên quan đến nội dung thuyết trình
+- Section có `type_hint: "image-focus"` hoặc `metrics` và trang tương ứng có ảnh
+
+**Không cần extract:** trang chỉ có ảnh nhỏ (logo, icon, header trang trí) hoặc tài liệu không phải PDF.
+
+**Quy trình:**
+
+1. Gọi `pdf_extract_images(file_index, page_start, page_end)` cho trang đã xác định ở trên
+2. Từ manifest trả về, bỏ qua ảnh nhỏ hơn 50pt hoặc là logo/watermark
+3. Gọi `pdf_annotate_images(file_index, annotations)` để ghi mô tả cho từng ảnh đã chọn
+4. Điền path tuyệt đối vào `images[]` của section tương ứng
+
+Dùng đúng giá trị trường `path` từ manifest trả về bởi `pdf_extract_images`. KHÔNG được đặt đường dẫn tự đặt hay ví dụ giả.

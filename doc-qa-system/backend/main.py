@@ -9,12 +9,23 @@ if sys.platform == "win32":
 from dotenv import load_dotenv
 load_dotenv()
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from api.routes import router
+from graph.graph import build_graph
 
-app = FastAPI(title="Doc-QA System", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as checkpointer:
+        app.state.graph_app = build_graph(checkpointer)
+        yield
+
+
+app = FastAPI(title="Doc-QA System", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

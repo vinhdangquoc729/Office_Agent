@@ -34,7 +34,16 @@ async def response_maker_node(state: DocQAState) -> dict:
     analysis = state.get("analysis", {})
     user_request = state["messages"][-1].content if state.get("messages") else ""
 
-    data = analysis.get("data", "")
+    _data_raw = analysis.get("data", "")
+    if isinstance(_data_raw, dict):
+        sections = []
+        for key, val in _data_raw.items():
+            sections.append(f"**{key}**\n\n{val}" if isinstance(val, str) else f"**{key}**\n\n{json.dumps(val, ensure_ascii=False, indent=2)}")
+        data = "\n\n".join(sections)
+    elif isinstance(_data_raw, list):
+        data = json.dumps(_data_raw, ensure_ascii=False, indent=2)
+    else:
+        data = str(_data_raw) if _data_raw else ""
     sources = analysis.get("sources", [])
 
     context = json.dumps(

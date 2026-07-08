@@ -343,10 +343,8 @@ def analyst_node(state: DocQAState) -> dict:
                     chart_paths.append(line[len("chart_saved:"):].strip())
 
     final = messages[-1].content or ""
-    cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", final.strip())
-    cleaned = re.sub(r"\n?```$", "", cleaned).strip()
     try:
-        analysis = json.loads(cleaned)
+        analysis = parse_json_response(final)
     except Exception:
         analysis = {"prose_summary": final}
 

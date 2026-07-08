@@ -54,8 +54,25 @@ def read_skill_reference(slug: str, filename: str) -> str:
     return ref_path.read_text(encoding="utf-8")
 
 
+def read_skill_script(slug: str, filename: str) -> str:
+    """Đọc một file trong scripts/ của skill. Trả về nội dung hoặc thông báo lỗi."""
+    script_path = SKILLS_DIR / slug / "scripts" / filename
+    if not script_path.exists():
+        scripts_dir = SKILLS_DIR / slug / "scripts"
+        available = [f.name for f in sorted(scripts_dir.glob("*.ts")) if not f.name.startswith("_")]
+        if scripts_dir.is_dir() and not available:
+            available = [f.name for f in sorted(scripts_dir.iterdir()) if f.is_file() and not f.name.startswith("_") and f.suffix in (".ts", ".js")]
+        return f"Không tìm thấy '{filename}'. File .ts có sẵn: {available}"
+    return script_path.read_text(encoding="utf-8")
+
+
+_ANALYST_EXCLUDED = {"pptx-slides", "slide-creation"}
+
+
 def build_skill_catalog(lang: str = "vi") -> str:
     lines = ["## Available Skills (Discovery)\n"]
     for s in list_skills(lang):
+        if s["slug"] in _ANALYST_EXCLUDED:
+            continue
         lines.append(f'- `{s["slug"]}`: {s["description"]}')
     return "\n".join(lines)

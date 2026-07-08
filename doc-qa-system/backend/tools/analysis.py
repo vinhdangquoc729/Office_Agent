@@ -51,11 +51,12 @@ def run_python_subprocess(code: str, csv_data: str = "") -> str:
         # Wrap để khi lỗi tự in ra columns của các DataFrame trong scope
         wrapped = (
             "import traceback as _tb\n"
+            "import sys as _sys\n"
             "import pandas as _pd\n"
             "try:\n"
             + "\n".join("    " + l for l in user_code.splitlines())
             + "\nexcept Exception as _e:\n"
-            "    _tb.print_exc()\n"
+            "    _tb.print_exc(file=_sys.stdout)\n"
             "    for _k, _v in list(locals().items()):\n"
             "        if isinstance(_v, _pd.DataFrame) and not _k.startswith('_'):\n"
             "            print(f'[DataFrame \"{_k}\" columns]: {list(_v.columns)}')\n"

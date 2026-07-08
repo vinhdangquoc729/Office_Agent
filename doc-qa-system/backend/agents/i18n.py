@@ -37,9 +37,10 @@ _LABELS = {
         ),
         "slide_mandatory": (
             "\n\nNHIỆM VỤ BẮT BUỘC: Yêu cầu này là TẠO SLIDE. "
-            "Trường 'slides' trong output JSON PHẢI được điền đầy đủ — đây là output chính, không phải tuỳ chọn. "
-            "Trước khi kết thúc, kiểm tra lại: 'slides' có phải là array không rỗng không?"
+            "Trường 'slide_outline' trong output JSON PHẢI được điền đầy đủ — đây là output chính, không phải tuỳ chọn. "
+            "Trước khi kết thúc, kiểm tra lại: 'slide_outline.sections' có phải là array không rỗng không?"
         ),
+        "slide_outline": "Outline bài thuyết trình",
     },
     "en": {
         "user_role": "User",
@@ -79,9 +80,10 @@ _LABELS = {
         ),
         "slide_mandatory": (
             "\n\nMANDATORY TASK: This request is to CREATE SLIDES. "
-            "The 'slides' field in the output JSON MUST be fully populated — this is the primary output, not optional. "
-            "Before finishing, verify: is 'slides' a non-empty array?"
+            "The 'slide_outline' field in the output JSON MUST be fully populated — this is the primary output, not optional. "
+            "Before finishing, verify: is 'slide_outline.sections' a non-empty array?"
         ),
+        "slide_outline": "Presentation outline",
     },
 }
 
