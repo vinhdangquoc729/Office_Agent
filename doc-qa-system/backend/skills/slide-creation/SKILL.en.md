@@ -90,6 +90,13 @@ pptx.layout = 'LAYOUT_16x9';  // 10" × 5.625"
 const t = createTheme(PRESETS['<preset from Step 3>']);
 const total = <total slide count from Step 2>;
 
+// Image dimension helper — preserves aspect ratio within a bounding box
+function fitImage(r: number, maxW: number, maxH: number): { w: number, h: number } {
+  return r > maxW / maxH
+    ? { w: maxW, h: Math.round(maxW / r * 100) / 100 }
+    : { w: Math.round(maxH * r * 100) / 100, h: maxH };
+}
+
 // Reusable heading helper — title + accent underline
 function heading(slide: any, title: string): void {
   slide.addText(title, { x: 0.5, y: 0.25, w: 9, h: 0.72,
@@ -170,8 +177,8 @@ t.radius.card                       card corner radius (inches)
 | section_divider | `addSectionDivider(slide, title, t)` from decorative |
 | bullets | `heading()` + `addText([...runs], {...})` with `bullet: {code:'25B8'}` |
 | metrics | Loop: large `addText(value)` + small `addText(label)` per metric |
-| image-focus (1 image) | `heading()` + `addImage({ path, x: 0.75, y: 1.15, w: 8.5, h: 3.8, sizing: { type: 'contain', w: 8.5, h: 3.8 } })` |
-| image-focus (2 images) | `heading()` + two `addImage` side by side: left `x:0.5 w:4.4`, right `x:5.1 w:4.4`, both `h:3.5 sizing:{type:'contain',...}` |
+| image-focus (1 image) | `heading()` + call `get_image_dimensions` → `fitImage(r, 8.5, 3.8)` → `addImage({ path, x, y:1.15, w, h })` |
+| image-focus (2 images) | `heading()` + `get_image_dimensions` for each → `fitImage(r, 4.4, 3.5)` → two `addImage` side by side |
 | comparison | Two `addShape('roundRect')` headers + `addText` rows per item |
 | timeline | `addShape('line')` spine + `addShape('ellipse')` dots + `addText` above/below |
 | feature_grid | Grid of `addShape('roundRect')` cards + `addText(title)` + `addText(desc)` |
@@ -180,32 +187,44 @@ t.radius.card                       card corner radius (inches)
 
 ### Image handling
 
-**Always use `sizing: { type: 'contain', w, h }` — never omit it.** Without `sizing`, PptxGenJS stretches the image to fill the exact `w`/`h` box, distorting the aspect ratio.
+**Always call `get_image_dimensions(path)` first**, compute the correct `w`/`h` that fits within the target box, then pass those pre-computed dimensions to `addImage`. This preserves aspect ratio because PptxGenJS renders exactly the `w`/`h` you provide.
 
 **Hard constraint: `y + h` must never exceed 5.5"** (slide height is 5.625"). Always verify before writing.
 
+#### Dimension helper — add this to every script that places images
+
 ```typescript
-// Pattern A — image-focus slide: heading + image only (no body text)
-// Image fills the full area below heading
-s.addImage({
-  path: '/absolute/path/to/image.png',
-  x: 0.75, y: 1.15, w: 8.5, h: 3.8,   // 1.15 + 3.8 = 4.95 ✓
-  sizing: { type: 'contain', w: 8.5, h: 3.8 },
-});
-
-// Pattern B — text + image on same slide: shorten text box, place image below
-s.addText([...], { x: 0.7, y: 1.15, w: 8.6, h: 1.6 });          // short text box
-s.addImage({ path: img, x: 0.75, y: 2.9, w: 8.5, h: 2.5,        // 2.9 + 2.5 = 5.4 ✓
-  sizing: { type: 'contain', w: 8.5, h: 2.5 } });
-
-// Pattern C — 2 images side by side below heading
-s.addImage({ path: img1, x: 0.5, y: 1.15, w: 4.4, h: 3.5,       // 1.15 + 3.5 = 4.65 ✓
-  sizing: { type: 'contain', w: 4.4, h: 3.5 } });
-s.addImage({ path: img2, x: 5.1, y: 1.15, w: 4.4, h: 3.5,
-  sizing: { type: 'contain', w: 4.4, h: 3.5 } });
+// Paste this function definition into your script (after the imports)
+function fitImage(r: number, maxW: number, maxH: number): { w: number, h: number } {
+  return r > maxW / maxH
+    ? { w: maxW, h: Math.round(maxW / r * 100) / 100 }
+    : { w: Math.round(maxH * r * 100) / 100, h: maxH };
+}
 ```
 
-**Prefer Pattern A** (separate image-focus slide) over Pattern B. Only combine text + image on the same slide when the text is short (2-3 sentences max).
+#### Patterns
+
+```typescript
+// Pattern A — image-focus slide: heading + full-width image below
+// box: maxW=8.5, maxH=3.8  →  y: 1.15, 1.15+3.8=4.95 ✓
+const { w: iw, h: ih } = fitImage(aspectRatio, 8.5, 3.8);
+s.addImage({ path, x: 0.75 + (8.5 - iw) / 2, y: 1.15, w: iw, h: ih });
+
+// Pattern B — short text + image below (text max 2-3 sentences)
+// text h: 1.6  →  image box: maxW=8.5, maxH=2.5, y: 2.9  →  2.9+2.5=5.4 ✓
+s.addText([...], { x: 0.7, y: 1.15, w: 8.6, h: 1.6 });
+const { w: iw, h: ih } = fitImage(aspectRatio, 8.5, 2.5);
+s.addImage({ path, x: 0.75 + (8.5 - iw) / 2, y: 2.9, w: iw, h: ih });
+
+// Pattern C — 2 images side by side
+// box each: maxW=4.4, maxH=3.5  →  y: 1.15, 1.15+3.5=4.65 ✓
+const d1 = fitImage(r1, 4.4, 3.5);
+s.addImage({ path: img1, x: 0.5 + (4.4 - d1.w) / 2, y: 1.15, w: d1.w, h: d1.h });
+const d2 = fitImage(r2, 4.4, 3.5);
+s.addImage({ path: img2, x: 5.1 + (4.4 - d2.w) / 2, y: 1.15, w: d2.w, h: d2.h });
+```
+
+**Prefer Pattern A** over Pattern B. Only combine text + image on one slide when text is 2-3 sentences max.
 
 ### Safe imports only
 
@@ -225,6 +244,7 @@ Use these tools to verify exact signatures before writing code:
 
 | Tool | Usage |
 |------|-------|
+| `get_image_dimensions(path)` | **Call before every `addImage`** — returns `{width, height, aspect_ratio}` to compute correct `w`/`h` |
 | `read_script_file("pptx-slides", "theme.ts")` | Verify `PRESETS` keys, `createTheme()`, `SlideTheme` fields |
 | `read_script_file("pptx-slides", "decorative.ts")` | Verify `addSectionDivider`, `addProgressBar`, `addSlideNumber` signatures |
 | `read_script_file("pptx-slides", "types.ts")` | Inspect `SlideTheme`, `StaircaseOpts`, `ProgressBarOpts` interfaces |

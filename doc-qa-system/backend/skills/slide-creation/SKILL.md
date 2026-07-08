@@ -90,6 +90,13 @@ pptx.layout = 'LAYOUT_16x9';  // 10" × 5.625"
 const t = createTheme(PRESETS['<preset từ Bước 3>']);
 const total = <tổng số slide từ Bước 2>;
 
+// Helper fitImage: tính w/h giữ tỉ lệ ảnh trong bounding box
+function fitImage(r: number, maxW: number, maxH: number): { w: number, h: number } {
+  return r > maxW / maxH
+    ? { w: maxW, h: Math.round(maxW / r * 100) / 100 }
+    : { w: Math.round(maxH * r * 100) / 100, h: maxH };
+}
+
 // Helper heading: tiêu đề + gạch chân accent
 function heading(slide: any, title: string): void {
   slide.addText(title, { x: 0.5, y: 0.25, w: 9, h: 0.72,
@@ -170,8 +177,8 @@ t.radius.card                       bo góc card (inches)
 | section_divider | `addSectionDivider(slide, title, t)` |
 | bullets | `heading()` + `addText([...runs], {...})` với `bullet:{code:'25B8'}` |
 | metrics | Loop: `addText(value)` lớn + `addText(label)` nhỏ |
-| image-focus (1 ảnh) | `heading()` + `addImage({ path, x: 0.75, y: 1.15, w: 8.5, h: 3.8, sizing: { type: 'contain', w: 8.5, h: 3.8 } })` |
-| image-focus (2 ảnh) | `heading()` + 2 `addImage` ngang nhau: trái `x:0.5 w:4.4`, phải `x:5.1 w:4.4`, cả hai `h:3.5 sizing:{type:'contain',...}` |
+| image-focus (1 ảnh) | `heading()` + gọi `get_image_dimensions` → `fitImage(r, 8.5, 3.8)` → `addImage({ path, x, y:1.15, w, h })` |
+| image-focus (2 ảnh) | `heading()` + `get_image_dimensions` mỗi ảnh → `fitImage(r, 4.4, 3.5)` → 2 `addImage` ngang nhau |
 | comparison | 2 header `addShape('roundRect')` + `addText` rows |
 | timeline | `addShape('line')` trục + `addShape('ellipse')` chấm + text |
 | feature_grid | Lưới `addShape('roundRect')` + `addText(title)` + `addText(desc)` |
@@ -180,28 +187,41 @@ t.radius.card                       bo góc card (inches)
 
 ### Xử lý ảnh
 
-**Luôn dùng `sizing: { type: 'contain', w, h }` — không bao giờ bỏ qua.** Nếu không có `sizing`, PptxGenJS kéo giãn ảnh theo đúng `w`/`h` chỉ định, làm méo tỉ lệ.
+**Luôn gọi `get_image_dimensions(path)` trước**, tính `w`/`h` vừa khít trong box mục tiêu, rồi truyền vào `addImage`. PptxGenJS render chính xác `w`/`h` được cung cấp — tính đúng từ đầu đảm bảo tỉ lệ ảnh không bị méo.
 
 **Ràng buộc cứng: `y + h` không được vượt quá 5.5"** (slide cao 5.625"). Luôn kiểm tra trước khi viết.
 
+#### Helper function — thêm vào mọi script có đặt ảnh
+
 ```typescript
-// Pattern A — image-focus slide: heading + ảnh (không có text body)
-s.addImage({
-  path: '/đường/dẫn/tuyệt/đối/image.png',
-  x: 0.75, y: 1.15, w: 8.5, h: 3.8,   // 1.15 + 3.8 = 4.95 ✓
-  sizing: { type: 'contain', w: 8.5, h: 3.8 },
-});
+// Dán hàm này vào script (sau phần import)
+function fitImage(r: number, maxW: number, maxH: number): { w: number, h: number } {
+  return r > maxW / maxH
+    ? { w: maxW, h: Math.round(maxW / r * 100) / 100 }
+    : { w: Math.round(maxH * r * 100) / 100, h: maxH };
+}
+```
 
-// Pattern B — text ngắn + ảnh cùng slide
-s.addText([...], { x: 0.7, y: 1.15, w: 8.6, h: 1.6 });          // text box ngắn
-s.addImage({ path: img, x: 0.75, y: 2.9, w: 8.5, h: 2.5,        // 2.9 + 2.5 = 5.4 ✓
-  sizing: { type: 'contain', w: 8.5, h: 2.5 } });
+#### Patterns
 
-// Pattern C — 2 ảnh ngang nhau bên dưới heading
-s.addImage({ path: img1, x: 0.5, y: 1.15, w: 4.4, h: 3.5,       // 1.15 + 3.5 = 4.65 ✓
-  sizing: { type: 'contain', w: 4.4, h: 3.5 } });
-s.addImage({ path: img2, x: 5.1, y: 1.15, w: 4.4, h: 3.5,
-  sizing: { type: 'contain', w: 4.4, h: 3.5 } });
+```typescript
+// Pattern A — image-focus slide: heading + ảnh toàn bộ phần còn lại
+// box: maxW=8.5, maxH=3.8  →  y:1.15, 1.15+3.8=4.95 ✓
+const { w: iw, h: ih } = fitImage(aspectRatio, 8.5, 3.8);
+s.addImage({ path, x: 0.75 + (8.5 - iw) / 2, y: 1.15, w: iw, h: ih });
+
+// Pattern B — text ngắn + ảnh bên dưới (text tối đa 2-3 câu)
+// text h:1.6  →  ảnh box maxW=8.5, maxH=2.5, y:2.9  →  2.9+2.5=5.4 ✓
+s.addText([...], { x: 0.7, y: 1.15, w: 8.6, h: 1.6 });
+const { w: iw, h: ih } = fitImage(aspectRatio, 8.5, 2.5);
+s.addImage({ path, x: 0.75 + (8.5 - iw) / 2, y: 2.9, w: iw, h: ih });
+
+// Pattern C — 2 ảnh ngang nhau
+// box mỗi ảnh: maxW=4.4, maxH=3.5  →  y:1.15, 1.15+3.5=4.65 ✓
+const d1 = fitImage(r1, 4.4, 3.5);
+s.addImage({ path: img1, x: 0.5 + (4.4 - d1.w) / 2, y: 1.15, w: d1.w, h: d1.h });
+const d2 = fitImage(r2, 4.4, 3.5);
+s.addImage({ path: img2, x: 5.1 + (4.4 - d2.w) / 2, y: 1.15, w: d2.w, h: d2.h });
 ```
 
 **Ưu tiên Pattern A** (slide image-focus riêng). Chỉ dùng Pattern B khi text thực sự ngắn (2-3 câu).
@@ -224,6 +244,7 @@ Dùng để kiểm tra signature chính xác trước khi viết:
 
 | Tool | Dùng để |
 |------|---------|
+| `get_image_dimensions(path)` | **Gọi trước mỗi `addImage`** — trả `{width, height, aspect_ratio}` để tính `w`/`h` đúng tỉ lệ |
 | `read_script_file("pptx-slides", "theme.ts")` | Xem `PRESETS` keys, `createTheme()`, fields của `SlideTheme` |
 | `read_script_file("pptx-slides", "decorative.ts")` | Xem signature của `addSectionDivider`, `addProgressBar`, `addSlideNumber` |
 | `read_script_file("pptx-slides", "types.ts")` | Xem interfaces `SlideTheme`, `StaircaseOpts`, `ProgressBarOpts` |

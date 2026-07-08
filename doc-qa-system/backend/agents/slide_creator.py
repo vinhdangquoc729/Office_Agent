@@ -38,6 +38,22 @@ _llm = ChatOpenAI(model="gpt-4o", temperature=0.2)
 
 
 @tool
+def get_image_dimensions(path: str) -> str:
+    """Get pixel dimensions and aspect ratio of an image file.
+    Call this for every image path before placing it on a slide.
+    Returns JSON: {width, height, aspect_ratio (width/height)}.
+    Use aspect_ratio to compute correct w/h so the image is not distorted.
+    path: absolute path to the image file."""
+    try:
+        from PIL import Image
+        with Image.open(path) as img:
+            w, h = img.size
+            return json.dumps({"width": w, "height": h, "aspect_ratio": round(w / h, 4)})
+    except Exception as exc:
+        return json.dumps({"error": str(exc)})
+
+
+@tool
 def read_reference(skill: str, filename: str) -> str:
     """Read a reference file from a skill's references/ directory.
     Use to access detailed API guides, patterns, or templates.
@@ -57,7 +73,7 @@ def read_script_file(skill: str, filename: str) -> str:
 
 
 def _validate_ts_images(ts_code: str) -> list[str]:
-    """Check addImage calls for missing sizing and y+h overflow."""
+    """Check addImage calls for y+h overflow."""
     issues = []
     pos = 0
     call_num = 0
@@ -79,13 +95,7 @@ def _validate_ts_images(ts_code: str) -> list[str]:
         content = ts_code[brace_start:end]
         pos = pos + m.start() + 1
 
-        if "sizing" not in content:
-            issues.append(
-                f"addImage #{call_num}: missing `sizing` — image will be stretched. "
-                "Add: sizing: { type: 'contain', w: <same as w>, h: <same as h> }"
-            )
-
-        # Strip nested objects (e.g. sizing:{...}) before extracting outer y/h
+        # Strip nested objects before extracting outer y/h
         outer = re.sub(r"\{[^{}]*\}", "", content)
         y_m = re.search(r"\by\s*:\s*([\d.]+)", outer)
         h_m = re.search(r"\bh\s*:\s*([\d.]+)", outer)
@@ -139,7 +149,7 @@ def slide_creator_node(state: DocQAState) -> dict:
         slug: skill name, e.g. 'pptx-slides', 'slide-creation'"""
         return activate_skill(slug, lang)
 
-    tools = [load_skill_content, read_reference, read_script_file]
+    tools = [load_skill_content, read_reference, read_script_file, get_image_dimensions]
     llm_with_tools = _llm.bind_tools(tools)
     tool_map = {t.name: t for t in tools}
 
