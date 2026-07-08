@@ -38,7 +38,7 @@ function saveMessages(conversationId: string, messages: Message[]) {
 }
 
 export default function ChatWindow({ conversationId, fileIds, files, onFirstMessage }: Props) {
-  const { lang, t } = useLanguage()
+  const { lang, agentMode, t } = useLanguage()
   const [messages, setMessages] = useState<Message[]>(() => loadMessages(conversationId, files))
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -73,7 +73,7 @@ export default function ChatWindow({ conversationId, fileIds, files, onFirstMess
     setMessages([...newMessages, placeholder])
 
     try {
-      for await (const event of sendMessageStream(fileIds, files.map((f) => f.name), text, conversationId, lang)) {
+      for await (const event of sendMessageStream(fileIds, files.map((f) => f.name), text, conversationId, lang, agentMode)) {
         if (event.type === 'activity') {
           flushSync(() => {
             setMessages((prev) => {

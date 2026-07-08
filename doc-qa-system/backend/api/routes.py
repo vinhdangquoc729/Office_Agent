@@ -125,6 +125,23 @@ class _ActivityHandler(AsyncCallbackHandler):
             await self._q.put({"type": "token", "text": token})
 
 
+class _UsageHandler(AsyncCallbackHandler):
+    """Tracks token usage across all LLM calls in a graph run."""
+    def __init__(self):
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+
+    async def on_llm_end(self, response, **kwargs):
+        usage = (getattr(response, "llm_output", None) or {}).get("token_usage", {})
+        self.prompt_tokens += usage.get("prompt_tokens", 0)
+        self.completion_tokens += usage.get("completion_tokens", 0)
+
+    @property
+    def cost_usd(self) -> float:
+        # GPT-4o pricing: $2.50/1M input, $10.00/1M output
+        return (self.prompt_tokens * 2.5 + self.completion_tokens * 10.0) / 1_000_000
+
+
 _MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 
 
@@ -171,6 +188,7 @@ async def chat_websocket(websocket: WebSocket):
     message: str = req_data.get("message", "")
     session_id: str = req_data.get("session_id", "default")
     lang: str = req_data.get("lang", "vi") if req_data.get("lang") in ("vi", "en") else "vi"
+    mode: str = req_data.get("mode", "multi")  # "multi" | "single"
 
     is_safe, _ = await _check_injection(message)
     if not is_safe:
@@ -207,15 +225,25 @@ async def chat_websocket(websocket: WebSocket):
     queue: asyncio.Queue = asyncio.Queue()
     final_result: dict = {}
 
-    _graph = websocket.app.state.graph_app
+    _graph = (
+        websocket.app.state.graph_single_app if mode == "single"
+        else websocket.app.state.graph_app
+    )
+
+    usage_handler = _UsageHandler()
 
     async def run_graph():
         try:
             result = await _graph.ainvoke(
                 input_state,
-                config={**config, "callbacks": [_ActivityHandler(queue, lang)]},
+                config={**config, "callbacks": [_ActivityHandler(queue, lang), usage_handler]},
             )
             final_result.update(result)
+            final_result["_usage"] = {
+                "input_tokens": usage_handler.prompt_tokens,
+                "output_tokens": usage_handler.completion_tokens,
+                "cost_usd": round(usage_handler.cost_usd, 6),
+            }
         except Exception as e:
             final_result["error"] = str(e)
         finally:
@@ -255,7 +283,8 @@ async def chat_websocket(websocket: WebSocket):
         if reply:
             await _graph.aupdate_state(config, {"messages": [AIMessage(content=reply)]})
 
-        await websocket.send_json({"type": "done", "output_files": output_files, "content": reply})
+        usage = final_result.pop("_usage", {})
+        await websocket.send_json({"type": "done", "output_files": output_files, "content": reply, **usage})
 
     except WebSocketDisconnect:
         graph_task.cancel()

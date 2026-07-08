@@ -16,12 +16,15 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from api.routes import router
 from graph.graph import build_graph
+from graph.graph_single import build_graph_single
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as checkpointer:
-        app.state.graph_app = build_graph(checkpointer)
+    async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as cp_multi, \
+               AsyncSqliteSaver.from_conn_string("checkpoints_single.db") as cp_single:
+        app.state.graph_app = build_graph(cp_multi)
+        app.state.graph_single_app = build_graph_single(cp_single)
         yield
 
 

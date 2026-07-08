@@ -69,10 +69,12 @@ def read_skill_script(slug: str, filename: str) -> str:
 _ANALYST_EXCLUDED = {"pptx-slides", "slide-creation"}
 
 
-def build_skill_catalog(lang: str = "vi") -> str:
+def build_skill_catalog(lang: str = "vi", excluded: set | None = None) -> str:
+    if excluded is None:
+        excluded = _ANALYST_EXCLUDED
     lines = ["## Available Skills (Discovery)\n"]
     for s in list_skills(lang):
-        if s["slug"] in _ANALYST_EXCLUDED:
+        if s["slug"] in excluded:
             continue
         lines.append(f'- `{s["slug"]}`: {s["description"]}')
     return "\n".join(lines)

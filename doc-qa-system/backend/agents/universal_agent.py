@@ -15,31 +15,52 @@ from tools.file_readers import (
     read_pdf_tables_custom, extract_pdf_structure,
 )
 from tools.analysis import run_python_subprocess
-from tools.skill_loader import build_skill_catalog, activate_skill, read_skill_reference
+from tools.output_writers import write_report_docx, run_ts_script
+from tools.skill_loader import build_skill_catalog, activate_skill, read_skill_reference, read_skill_script
 from agents.helpers import pdf_helper
 
-MAX_ITERATIONS = 15
+MAX_ITERATIONS = 20
 
-_BASE_PROMPTS: dict[str, str] = {lang: load_prompt("analyst", lang) for lang in ("vi", "en")}
-_SKILL_CATALOGS: dict[str, str] = {lang: build_skill_catalog(lang) for lang in ("vi", "en")}
+_BASE_PROMPTS: dict[str, str] = {lang: load_prompt("universal_agent", lang) for lang in ("vi", "en")}
+# Universal agent sees ALL skills including slide-creation and pptx-slides
+_SKILL_CATALOGS: dict[str, str] = {
+    lang: build_skill_catalog(lang, excluded=set()) for lang in ("vi", "en")
+}
 _llm = ChatOpenAI(model="gpt-4o", temperature=0)
-
 
 
 @tool
 def read_reference(skill: str, filename: str) -> str:
-    """Đọc file tham khảo trong references/ của một skill đang active.
-    Dùng khi cần xem template chi tiết, ví dụ code, hoặc hướng dẫn bổ sung.
-    skill: tên skill (ví dụ 'excel-analysis')
-    filename: tên file (ví dụ 'chart_templates.md')"""
+    """Read a reference file from a skill's references/ directory.
+    skill: skill slug (e.g. 'pptx-slides', 'slide-creation')
+    filename: file name (e.g. 'pptxgenjs-helpers.md')"""
     return read_skill_reference(skill, filename)
 
 
-def _extract_file_metadata(file_content: str) -> tuple[list, list, dict, list]:
-    """Trả về (file_paths_posix, files_metadata, sheets_columns_0, sheet_names_0).
+@tool
+def read_script_file(skill: str, filename: str) -> str:
+    """Read a TypeScript source file from a skill's scripts/ directory.
+    skill: skill slug (e.g. 'pptx-slides')
+    filename: file name (e.g. 'theme.ts')"""
+    return read_skill_script(skill, filename)
 
-    files_metadata: list[dict] với {suggested_header_row, sheets_columns} per file.
-    """
+
+@tool
+def get_image_dimensions(path: str) -> str:
+    """Get pixel dimensions and aspect ratio of an image file.
+    Call this for every image before placing it on a slide.
+    Returns JSON: {width, height, aspect_ratio (width/height)}.
+    path: absolute path to the image file."""
+    try:
+        from PIL import Image
+        with Image.open(path) as img:
+            w, h = img.size
+            return json.dumps({"width": w, "height": h, "aspect_ratio": round(w / h, 4)})
+    except Exception as exc:
+        return json.dumps({"error": str(exc)})
+
+
+def _extract_file_metadata(file_content: str) -> tuple[list, int, dict, list]:
     files_metadata: list[dict] = []
     suggested_header_row_0 = 0
     sheets_columns_0: dict = {}
@@ -51,7 +72,6 @@ def _extract_file_metadata(file_content: str) -> tuple[list, list, dict, list]:
             return files_metadata, suggested_header_row_0, sheets_columns_0, sheet_names_0
 
         if "files" in fc:
-            # Multi-file format
             for f in fc["files"]:
                 meta = {
                     "suggested_header_row": f.get("suggested_header_row") or 0,
@@ -63,7 +83,6 @@ def _extract_file_metadata(file_content: str) -> tuple[list, list, dict, list]:
                 sheets_columns_0 = files_metadata[0]["sheets_columns"]
                 sheet_names_0 = list(sheets_columns_0.keys())
         else:
-            # Single-file format (backward compat)
             meta = {
                 "suggested_header_row": fc.get("suggested_header_row") or 0,
                 "sheets_columns": fc.get("sheets_columns") or {},
@@ -101,7 +120,7 @@ def _build_file_list_context(file_paths: list, file_content: str, file_names: li
     return "\n".join(lines)
 
 
-def analyst_node(state: DocQAState) -> dict:
+def universal_agent_node(state: DocQAState) -> dict:
     lang = state.get("lang", "vi")
     file_type = state.get("file_type", "")
     file_content = state.get("file_content", "")
@@ -110,32 +129,57 @@ def analyst_node(state: DocQAState) -> dict:
     file_paths_state: list = state.get("file_paths") or (
         [state["file_path"]] if state.get("file_path") else []
     )
-    file_path = file_paths_state[0] if file_paths_state else ""
 
     files_metadata, suggested_header_row, sheets_columns, sheet_names = \
         _extract_file_metadata(file_content)
+
+    # --- Output path accumulators ---
+    report_path_out: list[str] = []
+    slide_path_out: list[str] = []
+
+    # --- Output tools ---
+
+    @tool
+    def write_report(markdown_content: str) -> str:
+        """Write the final analysis as a formatted .docx report.
+        Call when the user explicitly requests a Word report/document.
+        markdown_content: full report content in markdown format.
+        Returns the absolute file path of the saved .docx."""
+        path = write_report_docx(markdown_content)
+        report_path_out.append(path)
+        return f"report_saved:{path}"
+
+    @tool
+    def create_slide(ts_code: str) -> str:
+        """Execute TypeScript PptxGenJS code to generate a .pptx presentation.
+        Call when the user requests slides or a PowerPoint presentation.
+        ts_code: complete TypeScript code (without ```typescript fences).
+        Returns the absolute file path of the saved .pptx."""
+        path = run_ts_script(ts_code)
+        slide_path_out.append(path)
+        return f"slide_saved:{path}"
 
     # --- PDF tools (closures capturing file_paths_state) ---
 
     @tool
     def pdf_get_page_count(file_index: int = 0) -> int:
-        """Lấy tổng số trang của file PDF.
-        file_index: chỉ số file trong danh sách (mặc định 0)."""
+        """Get total page count of a PDF file.
+        file_index: index in the document list (default 0)."""
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
         return get_pdf_page_count(path)
 
     @tool
     def pdf_summarize_pages(file_index: int, page_start: int, page_end: int) -> str:
-        """Nhờ PDF helper tóm tắt nội dung từng trang trong khoảng [page_start, page_end] (1-indexed, inclusive).
-        file_index: chỉ số file. Nên gọi với batch 5-7 trang mỗi lần."""
+        """Ask PDF helper to summarize pages [page_start, page_end] (1-indexed, inclusive).
+        file_index: document index. Call with at most 5-7 pages at a time."""
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
         result = pdf_helper.run(path, page_start, page_end, lang)
         return json.dumps(result, ensure_ascii=False)
 
     @tool
     def pdf_read_pages(file_index: int, page_start: int, page_end: int) -> str:
-        """Đọc nội dung các trang PDF: text, bảng, danh sách ảnh, annotations.
-        file_index: chỉ số file. Dùng khi cần đọc kỹ nội dung trang cụ thể."""
+        """Read PDF page content: text, tables, image list, annotations.
+        file_index: document index. Use when you need to read specific pages in detail."""
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
         result = read_pdf_pages(path, page_start, page_end)
         for page in result:
@@ -152,16 +196,16 @@ def analyst_node(state: DocQAState) -> dict:
 
     @tool
     def pdf_read_pages_detailed(file_index: int, page_start: int, page_end: int) -> str:
-        """Đọc chi tiết vector PDF: chars với font/size/màu/tọa độ, lines, rects.
-        file_index: chỉ số file. Chỉ dùng khi cần vị trí chính xác các phần tử."""
+        """Read PDF vector detail: chars with font/size/color/coordinates, lines, rects.
+        file_index: document index. Only use when exact element positions are needed."""
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
         result = read_pdf_pages_detailed(path, page_start, page_end)
         return json.dumps(result, ensure_ascii=False)
 
     @tool
     def pdf_rag_search(file_index: int, query: str) -> str:
-        """Tìm kiếm ngữ nghĩa trong tài liệu PDF, trả về đoạn liên quan nhất kèm số trang.
-        file_index: chỉ số file. Dùng khi không biết thông tin ở trang nào."""
+        """Semantic search in PDF, returns most relevant passages with page numbers.
+        file_index: document index. Use when you don't know which page has the information."""
         from tools.rag_store import rag_search, index_pdf, is_indexed
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
         if not is_indexed(path):
@@ -174,9 +218,9 @@ def analyst_node(state: DocQAState) -> dict:
 
     @tool
     def pdf_extract_images(file_index: int, page_start: int = 1, page_end: int = 9999) -> str:
-        """Trích xuất ảnh từ các trang PDF chỉ định.
-        file_index: chỉ số file. page_start/page_end: phạm vi trang (mặc định toàn bộ).
-        Trả về manifest JSON: filename, path, page, tọa độ, kích thước."""
+        """Extract images from PDF pages, save to disk, return JSON manifest.
+        file_index: document index. page_start/page_end: range (default: all pages).
+        Returns: filename, path, page, coordinates, size."""
         from tools.image_extractor import extract_images
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
         manifest = extract_images(path, page_start, page_end)
@@ -186,9 +230,9 @@ def analyst_node(state: DocQAState) -> dict:
 
     @tool
     def pdf_annotate_images(file_index: int, annotations: list[dict]) -> str:
-        """Ghi mô tả ('about') cho các ảnh vào manifest.
-        file_index: chỉ số file.
-        annotations: list dict {"filename": "page005_img01.png", "about": "mô tả"}."""
+        """Write 'about' description for images in the manifest.
+        file_index: document index.
+        annotations: list of {filename: str, about: str}."""
         from tools.image_extractor import annotate_images
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
         updated = annotate_images(path, annotations)
@@ -196,9 +240,9 @@ def analyst_node(state: DocQAState) -> dict:
 
     @tool
     def pdf_ocr_page(file_index: int, page_number: int) -> str:
-        """OCR trang PDF bằng EasyOCR, trả về text thuần đã ghép lại theo thứ tự từ trên xuống.
-        Dùng khi pdf_read_pages có _ocr_hint hoặc text sơ sài mà trang có ảnh.
-        file_index: chỉ số file. page_number: số trang (1-indexed)."""
+        """OCR a PDF page using EasyOCR, returns plain text joined top-to-bottom.
+        Use when pdf_read_pages shows _ocr_hint or sparse text with images.
+        file_index: document index. page_number: 1-indexed."""
         from tools.ocr import ocr_page
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
         blocks = ocr_page(path, page_number)
@@ -209,10 +253,10 @@ def analyst_node(state: DocQAState) -> dict:
 
     @tool
     def pdf_ocr_page_detailed(file_index: int, page_number: int) -> str:
-        """OCR trang PDF bằng EasyOCR, trả về list blocks đầy đủ với tọa độ PDF points.
-        Mỗi block: {text, confidence, x0, y0, x1, y1}.
-        Dùng khi cần biết vị trí chính xác của text trong trang (layout, caption, vùng cụ thể).
-        file_index: chỉ số file. page_number: số trang (1-indexed)."""
+        """OCR a PDF page, returns full block list with coordinates.
+        Each block: {text, confidence, x0, y0, x1, y1}.
+        Use when you need exact text positions (layout, captions).
+        file_index: document index. page_number: 1-indexed."""
         from tools.ocr import ocr_page
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
         blocks = ocr_page(path, page_number)
@@ -222,45 +266,30 @@ def analyst_node(state: DocQAState) -> dict:
 
     @tool
     def pdf_read_table_custom(file_index: int, page_number: int, strategy: str) -> str:
-        """Trích xuất bảng từ một trang PDF với strategy tùy chỉnh.
-        Dùng khi pdf_read_pages trả bảng rỗng nhưng thực tế trang có bảng.
-        strategy: "lines" (cần đường kẻ rõ) | "text" (không cần đường kẻ, dùng vị trí từ)
-        file_index: chỉ số file. page_number: số trang (1-indexed)."""
+        """Re-extract tables from one page with a custom strategy.
+        Use when pdf_read_pages returns empty tables but the page has a table.
+        strategy: "lines" (needs visible borders) | "text" (word-position based)
+        file_index: document index. page_number: 1-indexed."""
         path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
         result = read_pdf_tables_custom(path, page_number, strategy)
-        return json.dumps(result, ensure_ascii=False)
-
-    @tool
-    def pdf_extract_structure(file_index: int) -> str:
-        """Phân tích cấu trúc tài liệu PDF bằng font size: phát hiện heading/chương/mục.
-        Trả về: body_size, heading_sizes theo level, danh sách tất cả heading kèm page number.
-        Dùng trước khi đọc chi tiết để hiểu cấu trúc chương mục của tài liệu dài.
-        file_index: chỉ số file."""
-        path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
-        result = extract_pdf_structure(path)
         return json.dumps(result, ensure_ascii=False)
 
     # --- run_code closure ---
 
     @tool
     def run_code(code: str) -> str:
-        """Chạy Python code (pandas, numpy) để tính toán, thống kê dữ liệu.
-        QUAN TRỌNG:
-        1. Mỗi lần gọi là một subprocess độc lập — biến từ lần gọi trước KHÔNG tồn tại.
-        2. Phải dùng print() để xuất kết quả — expression cuối KHÔNG tự động hiển thị.
-        Các biến được inject sẵn:
-          - file_paths        : list đường dẫn tất cả file (posix), dùng file_paths[index]
-          - file_path         : = file_paths[0] (file đầu tiên, backward compat)
-          - files_metadata    : list dict {suggested_header_row, sheets_columns} per file
-          - suggested_header_row : header row của file_paths[0]
-          - sheet_names       : list tên sheet của file_paths[0]
-          - sheets_columns    : dict {sheet: [cols]} của file_paths[0]
-          - output_dir        : thư mục lưu chart
-        Ví dụ:
-          import pandas as pd
-          df = pd.read_excel(file_path, sheet_name=sheet_names[0], header=suggested_header_row)
-          # File thứ 2:
-          df2 = pd.read_excel(file_paths[1], header=files_metadata[1]['suggested_header_row'])"""
+        """Run Python code (pandas, numpy) for computation and statistics.
+        IMPORTANT:
+        1. Each call is an independent subprocess — variables from previous calls do NOT persist.
+        2. Must use print() to output results — final expressions are NOT auto-displayed.
+        Pre-injected variables:
+          - file_paths: list of all file paths (posix)
+          - file_path: = file_paths[0]
+          - files_metadata: list of {suggested_header_row, sheets_columns} per file
+          - suggested_header_row: header row of file_paths[0]
+          - sheet_names: list of sheet names for file_paths[0]
+          - sheets_columns: dict {sheet: [cols]} for file_paths[0]
+          - output_dir: directory to save charts"""
         all_posix = [p.replace("\\", "/") for p in file_paths_state]
         fp_posix = all_posix[0] if all_posix else ""
         uploads_dir = "/".join(fp_posix.split("/")[:-1])
@@ -295,11 +324,11 @@ def analyst_node(state: DocQAState) -> dict:
 
         return result
 
-    # --- Skill selection ---
+    # --- Skill selection (Progressive Disclosure) ---
     catalog = _SKILL_CATALOGS.get(lang, _SKILL_CATALOGS["vi"])
     selector_resp = _llm.invoke([
         {"role": "system", "content": lbl(lang, "select_prompt", catalog=catalog)},
-        {"role": "user",   "content": f"file_type: {file_type}\n{lbl(lang, 'request')}: {user_request}"},
+        {"role": "user", "content": f"file_type: {file_type}\n{lbl(lang, 'request')}: {user_request}"},
     ])
     try:
         selected = parse_json_response(selector_resp.content)
@@ -312,19 +341,23 @@ def analyst_node(state: DocQAState) -> dict:
     base = _BASE_PROMPTS.get(lang, _BASE_PROMPTS["vi"])
     system = build_system_prompt(base, *skill_contents)
 
-    _pdf_tools = [pdf_get_page_count, pdf_rag_search, pdf_summarize_pages,
-                  pdf_read_pages, pdf_read_pages_detailed, pdf_extract_images, pdf_annotate_images,
-                  pdf_ocr_page, pdf_ocr_page_detailed]
+    _pdf_tools = [
+        pdf_get_page_count, pdf_rag_search, pdf_summarize_pages,
+        pdf_read_pages, pdf_read_pages_detailed, pdf_extract_images, pdf_annotate_images,
+        pdf_ocr_page, pdf_ocr_page_detailed, pdf_read_table_custom,
+    ]
     has_pdf = any(Path(p).suffix.lower() == ".pdf" for p in file_paths_state)
-    tools = [*_pdf_tools, read_reference, run_code] if has_pdf else [read_reference, run_code]
+    tools = [
+        *(_pdf_tools if has_pdf else []),
+        run_code, read_reference, read_script_file, get_image_dimensions,
+        write_report, create_slide,
+    ]
     llm_with_tools = _llm.bind_tools(tools)
-
-    slide_reminder = lbl(lang, "slide_mandatory") if "slide-content" in selected else ""
 
     file_names_state: list = state.get("file_names") or []
     file_list_ctx = _build_file_list_context(file_paths_state, file_content, file_names_state, lang)
 
-    # Conversation history: last 3 Q&A pairs (excluding current message)
+    # Conversation history: last 3 Q&A pairs
     all_msgs = state.get("messages", [])
     history_turns = all_msgs[:-1] if len(all_msgs) > 1 else []
     history_ctx = ""
@@ -341,7 +374,7 @@ def analyst_node(state: DocQAState) -> dict:
         HumanMessage(content=(
             f"{file_list_ctx}"
             f"{history_ctx}\n"
-            f"{lbl(lang, 'current_request')}: {user_request}{slide_reminder}\n\n"
+            f"{lbl(lang, 'current_request')}: {user_request}\n\n"
             f"{lbl(lang, 'document_content')}:\n{file_content}"
         )),
     ]
@@ -359,6 +392,7 @@ def analyst_node(state: DocQAState) -> dict:
             result = fn.invoke(tc["args"]) if fn else lbl(lang, "tool_not_found", name=tc["name"])
             messages.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
 
+    # Collect chart paths from tool results
     chart_paths = []
     for msg in messages:
         if isinstance(msg, ToolMessage):
@@ -366,12 +400,12 @@ def analyst_node(state: DocQAState) -> dict:
                 if line.startswith("chart_saved:"):
                     chart_paths.append(line[len("chart_saved:"):].strip())
 
-    final = messages[-1].content or ""
-    try:
-        analysis = parse_json_response(final)
-        if not isinstance(analysis, dict):
-            analysis = {"prose_summary": final, "data": analysis}
-    except Exception:
-        analysis = {"prose_summary": final}
+    final_text = (messages[-1].content or "").strip()
 
-    return {"analysis": analysis, "chart_paths": chart_paths}
+    return {
+        "summary": final_text,
+        "analysis": {"prose_summary": final_text},
+        "report_path": report_path_out[-1] if report_path_out else "",
+        "slide_path": slide_path_out[-1] if slide_path_out else "",
+        "chart_paths": chart_paths,
+    }

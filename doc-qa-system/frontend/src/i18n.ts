@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 
 export type Lang = 'vi' | 'en'
 export type Theme = 'light' | 'dark'
+export type AgentMode = 'multi' | 'single'
 
 const TRANSLATIONS = {
   vi: {
@@ -35,6 +36,9 @@ const TRANSLATIONS = {
     themeLabel: 'Giao diện',
     themeLight: 'Sáng',
     themeDark: 'Tối',
+    modeLabel: 'Chế độ xử lý',
+    modeMulti: 'Đa tác nhân',
+    modeSingle: 'Đơn tác nhân',
   },
   en: {
     newConversation: 'New conversation',
@@ -66,6 +70,9 @@ const TRANSLATIONS = {
     themeLabel: 'Theme',
     themeLight: 'Light',
     themeDark: 'Dark',
+    modeLabel: 'Processing mode',
+    modeMulti: 'Multi-agent',
+    modeSingle: 'Single agent',
   },
 }
 
@@ -77,6 +84,8 @@ interface LangContext {
   t: (key: TranslationKey, vars?: Record<string, string>) => string
   theme: Theme
   setTheme: (t: Theme) => void
+  agentMode: AgentMode
+  setAgentMode: (m: AgentMode) => void
 }
 
 const LanguageContext = createContext<LangContext>({
@@ -85,6 +94,8 @@ const LanguageContext = createContext<LangContext>({
   t: (key) => TRANSLATIONS.vi[key],
   theme: 'dark',
   setTheme: () => {},
+  agentMode: 'multi',
+  setAgentMode: () => {},
 })
 
 function applyThemeClass(t: Theme) {
@@ -95,6 +106,10 @@ function applyThemeClass(t: Theme) {
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(
     () => (localStorage.getItem('doc_qa_lang') as Lang) ?? 'vi'
+  )
+
+  const [agentMode, setAgentModeState] = useState<AgentMode>(
+    () => (localStorage.getItem('doc_qa_agent_mode') as AgentMode) ?? 'multi'
   )
 
   const [theme, setThemeState] = useState<Theme>(() => {
@@ -114,6 +129,11 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     applyThemeClass(t)
   }
 
+  const setAgentMode = (m: AgentMode) => {
+    setAgentModeState(m)
+    localStorage.setItem('doc_qa_agent_mode', m)
+  }
+
   const t = (key: TranslationKey, vars?: Record<string, string>): string => {
     let text =
       (TRANSLATIONS[lang] as Record<string, string>)[key] ??
@@ -129,7 +149,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   return React.createElement(
     LanguageContext.Provider,
-    { value: { lang, setLang, t, theme, setTheme } },
+    { value: { lang, setLang, t, theme, setTheme, agentMode, setAgentMode } },
     children
   )
 }

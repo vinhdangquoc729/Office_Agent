@@ -1,0 +1,72 @@
+[
+  {
+    "id": "pdf_qa_specific_page",
+    "query": "Trang 2 có mục lục những chương gì? Liệt kê đầy đủ.",
+    "file_type": "pdf",
+    "file_name": "bao_cao_nlp_co_phieu.pdf",
+    "expected_intent": "qa"
+  },
+  {
+    "id": "pdf_qa_phobert",
+    "query": "Cấu hình fine-tuning PhoBERT là gì? Learning rate, batch size, số epoch?",
+    "file_type": "pdf",
+    "file_name": "bao_cao_nlp_co_phieu.pdf",
+    "expected_intent": "qa"
+  },
+  {
+    "id": "pdf_qa_results",
+    "query": "Kết quả classification report trên tập kiểm tra là bao nhiêu? Accuracy, precision, recall, F1?",
+    "file_type": "pdf",
+    "file_name": "bao_cao_nlp_co_phieu.pdf",
+    "expected_intent": "qa"
+  },
+  {
+    "id": "pdf_qa_data",
+    "query": "Dữ liệu tin tức tài chính được thu thập từ nguồn nào? Bao nhiêu bài viết?",
+    "file_type": "pdf",
+    "file_name": "bao_cao_nlp_co_phieu.pdf",
+    "expected_intent": "qa"
+  },
+  {
+    "id": "pdf_qa_vn30",
+    "query": "Danh sách 30 mã cổ phiếu VN30 được chia theo nhóm ngành như thế nào?",
+    "file_type": "pdf",
+    "file_name": "bao_cao_nlp_co_phieu.pdf",
+    "expected_intent": "qa"
+  },
+  {
+    "id": "pdf_summarize",
+    "query": "Tóm tắt toàn bộ báo cáo trong 5 điểm chính, bao gồm phương pháp và kết quả nổi bật.",
+    "file_type": "pdf",
+    "file_name": "bao_cao_nlp_co_phieu.pdf",
+    "expected_intent": "summarize"
+  },
+  {
+    "id": "pdf_analyze_method",
+    "query": "So sánh các phương pháp phân tích tương quan và dự báo được dùng trong báo cáo. Phương pháp nào cho kết quả tốt nhất?",
+    "file_type": "pdf",
+    "file_name": "bao_cao_nlp_co_phieu.pdf",
+    "expected_intent": "analyze"
+  },
+  {
+    "id": "pdf_report",
+    "query": "Tạo báo cáo Word tóm tắt phương pháp, kết quả và nhận xét của nhóm trong báo cáo này.",
+    "file_type": "pdf",
+    "file_name": "bao_cao_nlp_co_phieu.pdf",
+    "expected_intent": "report"
+  },
+  {
+    "id": "pdf_slide",
+    "query": "Tạo slide thuyết trình 5 trang giới thiệu đề tài, phương pháp và kết quả chính của báo cáo.",
+    "file_type": "pdf",
+    "file_name": "bao_cao_nlp_co_phieu.pdf",
+    "expected_intent": "slide"
+  },
+  {
+    "id": "pdf_qa_structure",
+    "query": "Kiến trúc tổng thể hệ thống Market Sentiment gồm những thành phần nào?",
+    "file_type": "pdf",
+    "file_name": "bao_cao_nlp_co_phieu.pdf",
+    "expected_intent": "qa"
+  }
+]

@@ -12,7 +12,7 @@ interface Props {
 }
 
 function SettingsPanel({ onClose }: { onClose: () => void }) {
-  const { lang, setLang, theme, setTheme, t } = useLanguage()
+  const { lang, setLang, theme, setTheme, agentMode, setAgentMode, t } = useLanguage()
   return (
     <>
       <div style={styles.backdrop} onClick={onClose} />
@@ -32,6 +32,23 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
                   style={styles.flagImg}
                 />
                 {l === 'vi' ? 'Tiếng Việt' : 'English'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={styles.panelDivider} />
+
+        <div style={styles.panelSection}>
+          <span style={styles.panelLabel}>{t('modeLabel')}</span>
+          <div style={styles.panelRow}>
+            {(['multi', 'single'] as const).map((m) => (
+              <button
+                key={m}
+                style={{ ...styles.optionBtn, ...(agentMode === m ? styles.optionBtnActive : {}) }}
+                onClick={() => setAgentMode(m)}
+              >
+                {m === 'multi' ? t('modeMulti') : t('modeSingle')}
               </button>
             ))}
           </div>
