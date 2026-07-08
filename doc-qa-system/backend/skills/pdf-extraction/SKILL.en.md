@@ -57,6 +57,18 @@ pdf_rag_search(file_index, query)
 - First call indexes the whole document (slower); subsequent calls are fast
 - Use when: the document is long and you don't know which page contains the information
 
+pdf_read_table_custom(file_index, page_number, strategy)
+- Re-extract tables from one page using a custom detection strategy
+- strategy: "lines" (default pdfplumber — needs visible borders) | "text" (word-position based — works without borders)
+- Use when: pdf_read_pages returns empty tables but the page visually contains a table
+- Try strategy="text" first as a fallback when "lines" fails
+
+pdf_extract_structure(file_index)
+- Scans the entire document and returns a heading hierarchy inferred from font sizes
+- Returns: body_size (pt), heading_sizes mapped to levels H1–H4, list of all headings with page numbers
+- Use when: document is long (>20 pages) and you need to understand chapter/section structure before reading details
+- Headings are detected as text with font size ≥ 115% of body size
+
 ## Reading Strategy
 
 If the request asks about a specific page (e.g. "who is on page 69"):
@@ -72,6 +84,13 @@ If you need to find information but don't know which page (document > 30 pages):
 If the document is short (< 30 pages) and full analysis is needed:
 - Use pdf_summarize_pages in chunks of 5-7 pages
 - Only read details for chunks containing important information
+
+If the document is long (> 20 pages) and you need to navigate by chapter/section:
+- Call pdf_extract_structure first to get the full heading map with page numbers
+- Then jump directly to the relevant pages using pdf_read_pages
+
+If pdf_read_pages returns empty tables on a page that should have one:
+- Retry with pdf_read_table_custom(file_index, page_number, strategy="text")
 
 ## Image Workflow
 

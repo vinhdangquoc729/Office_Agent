@@ -57,6 +57,18 @@ pdf_rag_search(file_index, query)
 - Lần đầu gọi sẽ index toàn bộ (chậm hơn), các lần sau nhanh
 - Dùng khi: tài liệu dài, không biết thông tin ở trang nào
 
+pdf_read_table_custom(file_index, page_number, strategy)
+- Trích xuất lại bảng từ một trang với strategy tùy chỉnh
+- strategy: "lines" (mặc định, cần đường kẻ rõ) | "text" (dùng vị trí từ, không cần đường kẻ)
+- Dùng khi: pdf_read_pages trả bảng rỗng nhưng thực tế trang có bảng
+- Thử strategy="text" trước khi báo không có bảng
+
+pdf_extract_structure(file_index)
+- Quét toàn bộ tài liệu, trả về hierarchy heading suy luận từ font size
+- Kết quả: body_size (pt), heading_sizes theo level H1–H4, danh sách tất cả heading kèm page number
+- Dùng khi: tài liệu dài (>20 trang) cần hiểu cấu trúc chương/mục trước khi đọc chi tiết
+- Heading được phát hiện khi font size ≥ 115% body size
+
 ## Chiến lược đọc tài liệu
 
 Nếu yêu cầu hỏi về trang cụ thể (ví dụ "trang 69 gồm những ai"):
@@ -72,6 +84,13 @@ Nếu cần tìm thông tin nhưng không biết trang nào (tài liệu > 30 tr
 Nếu tài liệu ngắn (< 30 trang) và cần phân tích toàn bộ:
 - Dùng pdf_summarize_pages theo chunk 5-7 trang
 - Chỉ đọc chi tiết các chunk có thông tin quan trọng
+
+Nếu tài liệu dài (> 20 trang) và cần điều hướng theo chương/mục:
+- Gọi pdf_extract_structure trước để có bản đồ heading kèm số trang
+- Sau đó nhảy thẳng đến các trang liên quan bằng pdf_read_pages
+
+Nếu pdf_read_pages trả bảng rỗng trên trang thực tế có bảng:
+- Thử lại với pdf_read_table_custom(file_index, page_number, strategy="text")
 
 ## Luồng xử lý ảnh
 

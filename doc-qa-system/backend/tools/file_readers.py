@@ -185,6 +185,103 @@ def get_pdf_page_count(file_path: str) -> int:
         return len(pdf.pages)
 
 
+def read_pdf_tables_custom(file_path: str, page_number: int, strategy: str = "text") -> dict:
+    """Extract tables from one page using a custom detection strategy.
+    strategy: 'lines' (needs visible borders) | 'text' (word-position based, no borders needed)
+    """
+    if strategy not in {"lines", "text"}:
+        strategy = "text"
+    settings = {
+        "vertical_strategy": strategy,
+        "horizontal_strategy": strategy,
+        "snap_tolerance": 5,
+        "join_tolerance": 5,
+        "edge_min_length": 3,
+        "min_words_vertical": 3,
+        "min_words_horizontal": 1,
+    }
+    with pdfplumber.open(file_path) as pdf:
+        total = len(pdf.pages)
+        if page_number < 1 or page_number > total:
+            return {"page_number": page_number, "strategy": strategy, "tables": [], "table_count": 0}
+        page = pdf.pages[page_number - 1]
+        tables = []
+        for tbl in page.extract_tables(settings):
+            if tbl:
+                try:
+                    df = pd.DataFrame(tbl[1:], columns=tbl[0])
+                    tables.append(df.to_markdown(index=False))
+                except Exception:
+                    tables.append(str(tbl))
+    return {"page_number": page_number, "strategy": strategy, "tables": tables, "table_count": len(tables)}
+
+
+def extract_pdf_structure(file_path: str) -> dict:
+    """Scan all pages and return a heading hierarchy inferred from font sizes.
+    Returns: {body_size, heading_sizes, total_headings, headings: [{level, text, page, size, bold}]}
+    """
+    from collections import Counter
+
+    all_lines: list[dict] = []
+    size_counter: Counter = Counter()
+
+    with pdfplumber.open(file_path) as pdf:
+        for page_i, page in enumerate(pdf.pages, 1):
+            if not page.chars:
+                continue
+            lines_dict: dict[int, list] = {}
+            for c in page.chars:
+                if not c.get("text", "").strip():
+                    continue
+                y_key = round(c["y0"] / 2) * 2
+                lines_dict.setdefault(y_key, []).append(c)
+
+            for y_key in sorted(lines_dict, reverse=True):
+                chars = sorted(lines_dict[y_key], key=lambda c: c["x0"])
+                text = "".join(c["text"] for c in chars).strip()
+                if not text:
+                    continue
+                sizes = [c["size"] for c in chars if c.get("size")]
+                if not sizes:
+                    continue
+                max_size = max(sizes)
+                is_bold = any(
+                    "bold" in c.get("fontname", "").lower() for c in chars
+                )
+                size_counter[round(max_size)] += 1
+                all_lines.append({"page": page_i, "size": round(max_size, 1), "bold": is_bold, "text": text})
+
+    if not size_counter:
+        return {"error": "No text found"}
+
+    body_size = size_counter.most_common(1)[0][0]
+    heading_threshold = body_size * 1.15
+    heading_sizes = sorted(
+        {round(l["size"]) for l in all_lines if l["size"] >= heading_threshold},
+        reverse=True,
+    )
+    size_to_level = {s: i + 1 for i, s in enumerate(heading_sizes[:4])}
+
+    headings = []
+    for line in all_lines:
+        rounded = round(line["size"])
+        if rounded in size_to_level:
+            headings.append({
+                "level": size_to_level[rounded],
+                "text": line["text"][:150],
+                "page": line["page"],
+                "size": line["size"],
+                "bold": line["bold"],
+            })
+
+    return {
+        "body_size": body_size,
+        "heading_sizes": heading_sizes,
+        "total_headings": len(headings),
+        "headings": headings,
+    }
+
+
 def read_csv(file_path: str) -> str:
     df = pd.read_csv(file_path)
     return df.to_markdown(index=False)

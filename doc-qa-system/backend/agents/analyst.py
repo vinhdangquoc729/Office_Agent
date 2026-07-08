@@ -10,7 +10,10 @@ from langchain_core.tools import tool
 from agents import load_prompt, build_system_prompt, parse_json_response
 from agents.i18n import lbl
 from graph.state import DocQAState
-from tools.file_readers import read_pdf_pages, read_pdf_pages_detailed, get_pdf_page_count
+from tools.file_readers import (
+    read_pdf_pages, read_pdf_pages_detailed, get_pdf_page_count,
+    read_pdf_tables_custom, extract_pdf_structure,
+)
 from tools.analysis import run_python_subprocess
 from tools.skill_loader import build_skill_catalog, activate_skill, read_skill_reference
 from agents.helpers import pdf_helper
@@ -215,6 +218,26 @@ def analyst_node(state: DocQAState) -> dict:
         if not blocks:
             return lbl(lang, "no_ocr_text")
         return json.dumps(blocks, ensure_ascii=False)
+
+    @tool
+    def pdf_read_table_custom(file_index: int, page_number: int, strategy: str) -> str:
+        """Trích xuất bảng từ một trang PDF với strategy tùy chỉnh.
+        Dùng khi pdf_read_pages trả bảng rỗng nhưng thực tế trang có bảng.
+        strategy: "lines" (cần đường kẻ rõ) | "text" (không cần đường kẻ, dùng vị trí từ)
+        file_index: chỉ số file. page_number: số trang (1-indexed)."""
+        path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
+        result = read_pdf_tables_custom(path, page_number, strategy)
+        return json.dumps(result, ensure_ascii=False)
+
+    @tool
+    def pdf_extract_structure(file_index: int) -> str:
+        """Phân tích cấu trúc tài liệu PDF bằng font size: phát hiện heading/chương/mục.
+        Trả về: body_size, heading_sizes theo level, danh sách tất cả heading kèm page number.
+        Dùng trước khi đọc chi tiết để hiểu cấu trúc chương mục của tài liệu dài.
+        file_index: chỉ số file."""
+        path = file_paths_state[file_index] if file_index < len(file_paths_state) else file_paths_state[0]
+        result = extract_pdf_structure(path)
+        return json.dumps(result, ensure_ascii=False)
 
     # --- run_code closure ---
 
