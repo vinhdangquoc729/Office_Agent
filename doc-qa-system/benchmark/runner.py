@@ -7,7 +7,7 @@ Usage:
 Prerequisites:
     - Backend running: uvicorn main:app --port 8000
     - Update test_cases.json: replace file_name with actual uploaded file names in uploads/
-    - Or set BENCH_FILE_PDF / BENCH_FILE_XLSX env vars to actual file IDs
+    - Or set BENCH_FILE_PDF / BENCH_FILE_XLSX / BENCH_FILE_DOCX env vars to actual file IDs
 """
 
 import argparse
@@ -113,14 +113,16 @@ async def main():
                         help="Uploaded file ID for PDF test cases")
     parser.add_argument("--xlsx-id", default=os.environ.get("BENCH_FILE_XLSX", ""),
                         help="Uploaded file ID for Excel test cases")
+    parser.add_argument("--docx-id", default=os.environ.get("BENCH_FILE_DOCX", ""),
+                        help="Uploaded file ID for Word/DOCX test cases")
     args = parser.parse_args()
 
-    if not args.pdf_id and not args.xlsx_id:
-        print("ERROR: Provide at least one file ID via --pdf-id / --xlsx-id or env vars.")
+    if not args.pdf_id and not args.xlsx_id and not args.docx_id:
+        print("ERROR: Provide at least one file ID via --pdf-id / --xlsx-id / --docx-id or env vars.")
         print("  Upload a file first:  curl -X POST http://localhost:8000/upload -F 'file=@your.pdf'")
         sys.exit(1)
 
-    file_ids = {"pdf": args.pdf_id, "xlsx": args.xlsx_id}
+    file_ids = {"pdf": args.pdf_id, "xlsx": args.xlsx_id, "docx": args.docx_id}
 
     with open(args.cases, encoding="utf-8") as f:
         cases = json.load(f)

@@ -170,6 +170,18 @@ async def upload_file(file: UploadFile = File(...)):
         dest.unlink(missing_ok=True)
         raise HTTPException(500, f"Lỗi khi lưu file: {e}")
 
+    if ext == ".docx":
+        pdf_dest = dest.with_suffix(".pdf")
+        try:
+            import asyncio
+            from docx2pdf import convert
+            await asyncio.to_thread(convert, str(dest), str(pdf_dest))
+            dest.unlink(missing_ok=True)
+            dest = pdf_dest
+        except Exception as e:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(500, f"Lỗi khi convert DOCX sang PDF: {e}")
+
     return {"file_id": file_id, "filename": file.filename, "saved_as": dest.name}
 
 
